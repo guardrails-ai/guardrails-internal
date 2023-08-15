@@ -1,10 +1,13 @@
 """Rail class."""
+import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from lxml import etree as ET
 from lxml.etree import Element, SubElement
 from pydantic import BaseModel
+from guardrails import document_store
+from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
 
 from guardrails.prompt import Instructions, Prompt
 from guardrails.schema import JsonSchema, Schema, StringSchema
@@ -18,6 +21,7 @@ XMLPARSER = ET.XMLParser(encoding="utf-8")
 class Script:
     variables: dict = field(default_factory=dict)
     language: str = "python"
+    element: ET._Element = None
 
     @classmethod
     def from_xml(cls, root: ET._Element) -> "Script":
@@ -34,7 +38,7 @@ class Script:
         exec(root.text, globals())
         new_keys = globals().keys()
         variables = {k: globals()[k] for k in new_keys if k not in keys}
-        return cls(variables, language)
+        return cls(variables, language, root)
 
     @staticmethod
     def find_expressions(body) -> List[str]:
@@ -81,6 +85,21 @@ class Script:
         """Eval expression in the script's namespace."""
         return eval(expr, {**globals(), **self.variables})
 
+    def _to_request(self) -> dict:
+        script = None
+
+        if self.element is not None and self.element.text is not None:
+            script = {}
+            script["text"] = self.element.text
+
+            if self.language is not None:
+                script["language"] = self.language
+
+            if self.variables is not None:
+                script["variables"] = self.variables
+
+        return script
+
 
 @dataclass
 class Rail:
@@ -95,6 +114,13 @@ class Rail:
         3. `<output strict=True/False>`, which contains the output schema
         4. `<prompt>`, which contains the prompt to be passed to the LLM
     """
+    api_key = os.environ.get("GUARDRAILS_API_KEY")
+    if api_key is not None:
+        from guardrails.ingestion_service import IngestionServiceDocumentStore
+        document_store  = IngestionServiceDocumentStore(api_key=api_key)
+    else:
+        document_store = EphemeralDocumentStore()
+    
 
     input_schema: Optional[Schema] = (None,)
     output_schema: Optional[Schema] = (None,)
@@ -102,6 +128,7 @@ class Rail:
     prompt: Optional[Prompt] = (None,)
     script: Optional[Script] = (None,)
     version: Optional[str] = ("0.1",)
+
 
     @classmethod
     def from_pydantic(
@@ -118,7 +145,8 @@ class Rail:
 
     @classmethod
     def from_string(cls, string: str) -> "Rail":
-        return cls.from_xml(ET.fromstring(string, parser=XMLPARSER))
+        parsed_xml = ET.fromstring(string, parser=XMLPARSER)
+        return cls.from_xml(parsed_xml)
 
     @classmethod
     def from_xml(cls, xml: ET._Element):
@@ -139,10 +167,9 @@ class Rail:
         raw_input_schema = xml.find("input")
         if raw_input_schema is None:
             # No input schema, so do no input checking.
-            input_schema = Schema()
+            input_schema = Schema(document_store=cls.document_store)
         else:
-            input_schema = cls.load_input_schema(raw_input_schema)
-
+            input_schema = cls.load_input_schema(raw_input_schema, cls.document_store)
         # Load <output /> schema
         raw_output_schema = xml.find("output")
         if raw_output_schema is None:
@@ -150,7 +177,7 @@ class Rail:
         # Replace all expressions in the <output /> schema.
         raw_output_schema = script.replace_expressions(ET.tostring(raw_output_schema))
         raw_output_schema = ET.fromstring(raw_output_schema, parser=XMLPARSER)
-        output_schema = cls.load_output_schema(raw_output_schema)
+        output_schema = cls.load_output_schema(raw_output_schema, cls.document_store)
         # Parse instructions for the LLM. These are optional but if given,
         # LLMs can use them to improve their output. Commonly these are
         # prepended to the prompt.
@@ -174,24 +201,25 @@ class Rail:
         )
 
     @staticmethod
-    def load_schema(root: ET._Element) -> Schema:
+    def load_schema(root: ET._Element, document_store: DocumentStoreBase) -> Schema:
         """Given the RAIL <input> or <output> element, create a Schema
         object."""
-        return Schema(root)
+        return Schema(document_store, root=root)
 
     @staticmethod
-    def load_input_schema(root: ET._Element) -> Schema:
+    def load_input_schema(root: ET._Element, document_store: DocumentStoreBase) -> Schema:
         """Given the RAIL <input> element, create a Schema object."""
         # Recast the schema as an InputSchema.
-        return Schema(root)
+        return Schema(document_store, root=root)
 
     @staticmethod
-    def load_output_schema(root: ET._Element) -> Schema:
+    def load_output_schema(root: ET._Element, document_store: DocumentStoreBase) -> Schema:
         """Given the RAIL <output> element, create a Schema object."""
         # If root contains a `type="string"` attribute, then it's a StringSchema
         if "type" in root.attrib and root.attrib["type"] == "string":
-            return StringSchema(root)
-        return JsonSchema(root)
+            return StringSchema(root, document_store)
+        schema = JsonSchema(root, document_store)
+        return schema
 
     @staticmethod
     def load_instructions(root: ET._Element, output_schema: Schema) -> Instructions:
@@ -204,15 +232,41 @@ class Rail:
     @staticmethod
     def load_prompt(root: ET._Element, output_schema: Schema) -> Prompt:
         """Given the RAIL <prompt> element, create a Prompt object."""
-        return Prompt(
+        prompt = Prompt(
             source=root.text,
             output_schema=output_schema.transpile(),
         )
+        return prompt
 
     @staticmethod
     def load_script(root: ET._Element) -> Script:
         """Given the RAIL <script> element, load and execute the script."""
         return Script.from_xml(root)
+
+    def _to_request(self) -> Dict:
+        rail = {"version": self.version}
+
+        input_schema = (
+            self.input_schema._to_request() if self.input_schema is not None else None
+        )
+        if input_schema is not None:
+            rail["inputSchema"] = input_schema
+        output_schema = (
+            self.output_schema._to_request() if self.output_schema is not None else None
+        )
+        if output_schema is not None:
+            rail["outputSchema"] = output_schema
+        if self.instructions is not None:
+            rail["instructions"] = self.instructions._to_request()
+        if self.prompt is not None:
+            rail["prompt"] = self.prompt._to_request()
+        if (
+            self.script is not None
+            and self.script.element is not None
+            and self.script.element.text is not None
+        ):
+            rail["script"] = self.script._to_request()
+        return rail
 
 
 def generate_xml_code(

@@ -36,7 +36,7 @@ REQUIRED = [
     "pydantic==1.10.9",
     "typer",
     "griffe",
-    "tenacity>=8.1.0",
+    "tenacity>=8.1.0"
 ]
 
 # Read in docs/requirements.txt

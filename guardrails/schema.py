@@ -6,12 +6,13 @@ import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from lxml import etree as ET
 from lxml.builder import E
 
 from guardrails.datatypes import DataType, String
+from guardrails.document_store import DocumentStoreBase
 from guardrails.llm_providers import PromptCallable, openai_chat_wrapper, openai_wrapper
 from guardrails.prompt import Instructions, Prompt
 from guardrails.utils.constants import constants
@@ -24,6 +25,7 @@ from guardrails.utils.reask_utils import (
     get_pruned_tree,
     get_reasks_by_element,
 )
+from guardrails.utils.transform_utils import flatten, merge
 from guardrails.validators import Validator, check_refrain_in_dict, filter_in_dict
 
 if TYPE_CHECKING:
@@ -55,6 +57,9 @@ class FormatAttr:
     # The XML element that this format attribute is associated with.
     element: Optional[ET._Element] = None
 
+    # The modules names for any custom formats.
+    plugins: Optional[str] = None
+
     @property
     def empty(self) -> bool:
         """Return True if the format attribute is empty, False otherwise."""
@@ -70,7 +75,7 @@ class FormatAttr:
         Returns:
             A FormatAttr object.
         """
-        return cls(element.get("format"), element)
+        return cls(element.get("format"), element, element.get("plugins"))
 
     @property
     def tokens(self) -> List[str]:
@@ -88,6 +93,15 @@ class FormatAttr:
         tokens = re.split(pattern, self.format)
         tokens = list(filter(None, tokens))
         return tokens
+
+    @property
+    def namespaces(self) -> Union[List[str], None]:
+        if self.plugins is None:
+            return None
+        pattern = re.compile(r";(?![^{}]*})")
+        namespaces = re.split(pattern, self.plugins)
+        namespaces = list(filter(None, namespaces))
+        return namespaces
 
     @classmethod
     def parse_token(cls, token: str) -> Tuple[str, List[Any]]:
@@ -174,7 +188,7 @@ class FormatAttr:
         except AttributeError:
             raise AttributeError("Must call `get_validators` first.")
 
-    def get_validators(self, strict: bool = False) -> List[Validator]:
+    def get_validators(self, document_store: DocumentStoreBase, strict: bool = False) -> List[Validator]:
         """Get the list of validators from the format attribute. Only the
         validators that are registered for this element will be returned.
 
@@ -200,7 +214,18 @@ class FormatAttr:
             # The validators in `format` that are not registered for this element
             # will be ignored (with an error or warning, depending on the value of
             # `strict`), and the registered validators will be returned.
-            if validator_name not in types_to_validators[self.element.tag]:
+
+            types_to_validators_list = (
+                types_to_validators[self.element.tag]
+                if self.namespaces is None
+                else flatten(
+                    [
+                        types_to_validators.get(n, {}).get(self.element.tag, [])
+                        for n in self.namespaces
+                    ]
+                )
+            )
+            if validator_name not in types_to_validators_list:
                 if strict:
                     raise ValueError(
                         f"Validator {validator_name} is not valid for"
@@ -214,7 +239,13 @@ class FormatAttr:
                     _unregistered_validators.append(validator_name)
                 continue
 
-            validator = validators_registry[validator_name]
+            validator = (
+                validators_registry[validator_name]
+                if self.namespaces is None
+                else merge([validators_registry[n] for n in self.namespaces])[
+                    validator_name
+                ]
+            )
 
             # See if the formatter has an associated on_fail method.
             on_fail = None
@@ -226,7 +257,7 @@ class FormatAttr:
                 # beginning of a rail file.
 
             # Create the validator.
-            _validators.append(validator(*args, on_fail=on_fail))
+            _validators.append(validator(*args, document_store=document_store, on_fail=on_fail))
 
         self._validators = _validators
         self._unregistered_validators = _unregistered_validators
@@ -259,6 +290,7 @@ class Schema:
 
     def __init__(
         self,
+        document_store: DocumentStoreBase,
         root: Optional[ET._Element] = None,
         schema: Optional[Dict[str, DataType]] = None,
     ) -> None:
@@ -267,6 +299,7 @@ class Schema:
 
         self._schema = SimpleNamespace(**schema)
         self.root = root
+        self._store = document_store
 
         if root is not None:
             self.setup_schema(root)
@@ -390,8 +423,20 @@ class Schema:
         """
         raise NotImplementedError
 
+    def _to_request(self):
+        if self._schema is not None:
+            schema = {}
+            inner_schema = self._schema.__dict__
+            for key in inner_schema:
+                schema_element = inner_schema[key]
+                schema[key] = schema_element._to_request()
+            return {"schema": schema} if len(schema.keys()) > 0 else None
+
 
 class JsonSchema(Schema):
+    def __init__(self, root: ET._Element, document_store: DocumentStoreBase) -> None:
+        super().__init__(document_store, root=root)
+
     def get_reask_schema_and_prompt(
         self,
         reasks: List[FieldReAsk],
@@ -450,7 +495,7 @@ class JsonSchema(Schema):
             if isinstance(child, ET._Comment):
                 continue
             child_name = child.attrib["name"]
-            child_data = types_registry[child.tag].from_xml(child, strict=strict)
+            child_data = types_registry[child.tag].from_xml(child, self._store, strict=strict)
             self[child_name] = child_data
 
     def parse(self, output: str) -> Tuple[Dict, Optional[Exception]]:
@@ -493,6 +538,9 @@ class JsonSchema(Schema):
 
         validated_response = deepcopy(data)
 
+        # This is another good reason to switch to JSONSchema.
+        # It has prebuilt validators.
+        # See: https://python-jsonschema.readthedocs.io/en/latest/validate/
         if not verify_schema_against_json(
             self.root,
             validated_response,
@@ -571,9 +619,9 @@ class JsonSchema(Schema):
 
 
 class StringSchema(Schema):
-    def __init__(self, root: ET._Element) -> None:
+    def __init__(self, root: ET._Element, document_store: DocumentStoreBase) -> None:
         self.string_key = "string"
-        super().__init__(root)
+        super().__init__(document_store, root=root)
 
     def setup_schema(self, root: ET._Element) -> None:
         if len(root) != 0:

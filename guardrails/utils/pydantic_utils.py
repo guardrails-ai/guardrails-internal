@@ -2,12 +2,8 @@
 
 Guardrails lets users specify
 
-<pydantic
-    model="Person"
-    name="person"
-    description="Information about a person."
-    on-fail-pydantic="reask" / "refrain" / "raise"
-/>
+<pydantic     model="Person"     name="person" description="Information
+about a person."     on-fail-pydantic="reask" / "refrain" / "raise" />
 """
 import logging
 import warnings
@@ -236,6 +232,7 @@ def add_validators_to_xml_element(field_info: ModelField, element: Element) -> E
             validators = [validators]
 
         format_prompt = []
+        plugins_prompt = []
         on_fails = {}
         for val in validators:
             validator_prompt = val
@@ -245,6 +242,8 @@ def add_validators_to_xml_element(field_info: ModelField, element: Element) -> E
                 # Set the on-fail attribute based on the on_fail value
                 on_fail = val.on_fail.__name__ if val.on_fail else "noop"
                 on_fails[val.rail_alias] = on_fail
+                if val.namespace is not None:
+                    plugins_prompt.append(val.namespace)
             format_prompt.append(validator_prompt)
 
         if len(format_prompt) > 0:
@@ -252,6 +251,10 @@ def add_validators_to_xml_element(field_info: ModelField, element: Element) -> E
             element.set("format", format_prompt)
             for rail_alias, on_fail in on_fails.items():
                 element.set("on-fail-" + rail_alias, on_fail)
+
+        if len(plugins_prompt) > 0:
+            plugins_prompt = "; ".join(plugins_prompt)
+            element.set("plugins", plugins_prompt)
 
     return element
 

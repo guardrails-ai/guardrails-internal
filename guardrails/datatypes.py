@@ -8,6 +8,7 @@ from typing import Tuple, Type, Union
 from lxml import etree as ET
 from pydantic import BaseModel
 
+from guardrails.document_store import DocumentStoreBase
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ class DataType:
         self,
         children: Dict[str, Any],
         format_attr: "FormatAttr",
-        element: ET._Element,
+        element: ET._Element
     ) -> None:
         self._children = children
         self.format_attr = format_attr
@@ -106,27 +107,94 @@ class DataType:
         value = self.from_str(value)
         return self._iterate_validators(validation_logs, key, value, schema)
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         raise NotImplementedError("Abstract method.")
 
     @classmethod
-    def from_xml(cls, element: ET._Element, strict: bool = False) -> "DataType":
+    def from_xml(cls, element: ET._Element, document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
         from guardrails.schema import FormatAttr
 
         # TODO: don't want to pass strict through to DataType,
         # but need to pass it to FormatAttr.from_element
         # how to handle this?
         format_attr = FormatAttr.from_element(element)
-        format_attr.get_validators(strict)
+        format_attr.get_validators(document_store, strict)
 
         data_type = cls({}, format_attr, element)
-        data_type.set_children(element)
+        data_type.set_children(element, document_store)
         return data_type
 
     @property
     def children(self) -> SimpleNamespace:
         """Return a SimpleNamespace of the children of this DataType."""
         return SimpleNamespace(**self._children)
+
+    def _to_request(self) -> Dict:
+        datatype = {}
+
+        if self.format_attr is not None:
+            datatype["formatters"] = self.format_attr.tokens
+            if self.format_attr.namespaces is not None:
+                datatype["plugins"] = self.format_attr.namespaces
+
+        if self.element is not None:
+            element = {"type": self.element.tag}
+
+            element_name = self.element.get("name")
+            element_description = self.element.get("description")
+            element_strict = self.element.get("strict")
+            element_date_format = self.element.get("date-format")
+            element_time_format = self.element.get("time-format")
+            on_fail = self.element.get("on-fail")
+            on_fails = []
+            attr_keys = self.element.keys()
+            for attr_key in attr_keys:
+                if attr_key.startswith("on-fail") and attr_key != "on-fail":
+                    on_fail_method = self.element.get(attr_key)
+                    validator_tag = attr_key
+                    validator_on_fail = {
+                        "validatorTag": validator_tag,
+                        "method": on_fail_method
+                    }
+                    on_fails.append(validator_on_fail)
+            element_model = self.element.get("model")
+
+            if element_name is not None:
+                element["name"] = element_name
+            if element_description is not None:
+                element["description"] = element_description
+            if element_strict is not None:
+                element["strict"] = element_strict
+            if element_date_format is not None:
+                element["dateFormat"] = element_date_format
+            if element_time_format is not None:
+                element["timeFormat"] = element_time_format
+            if on_fail is not None:
+                element["onFail"] = on_fail
+            if len(on_fails) > 0:
+                element["onFails"] = on_fails
+            if element_model is not None:
+                element["model"] = element_model
+
+            datatype["element"] = element
+
+        if self.children is not None:
+            serialized_children = {}
+            elem_type = self.element.tag if self.element is not None else None
+            elem_is_list = elem_type == "list"
+            child_entries = (
+                self.children.__dict__.get("item", {})
+                if elem_is_list
+                else self.children.__dict__
+            )
+            if hasattr(child_entries, "_children"):
+                child_entries = child_entries._children
+            for child_key in child_entries:
+                serialized_children[child_key] = child_entries[child_key]._to_request()
+            datatype["children"] = (
+                {"item": serialized_children} if elem_is_list else serialized_children
+            )
+        return datatype
 
 
 registry: Dict[str, DataType] = {}
@@ -143,7 +211,7 @@ def register_type(name: str):
 
 
 class ScalarType(DataType):
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         for _ in element:
             raise ValueError("ScalarType data type must not have any children.")
 
@@ -227,8 +295,8 @@ class Date(ScalarType):
         return datetime.datetime.strptime(s, self.date_format).date()
 
     @classmethod
-    def from_xml(cls, element: ET._Element, strict: bool = False) -> "DataType":
-        datatype = super().from_xml(element, strict)
+    def from_xml(cls, element: ET._Element,  document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
+        datatype = super().from_xml(element, document_store, strict)
 
         if "date-format" in element.attrib or "date_format" in element.attrib:
             datatype.date_format = element.attrib["date-format"]
@@ -258,7 +326,7 @@ class Time(ScalarType):
         return datetime.datetime.strptime(s, self.time_format).time()
 
     @classmethod
-    def from_xml(cls, element: ET._Element, strict: bool = False) -> "DataType":
+    def from_xml(cls, element: ET._Element,  document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
         datatype = super().from_xml(element, strict)
 
         if "time-format" in element.attrib or "time_format" in element.attrib:
@@ -316,7 +384,7 @@ class List(NonScalarType):
 
         return schema
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for idx, child in enumerate(element, start=1):
             if idx > 1:
                 # Only one child is allowed in a list data type.
@@ -324,7 +392,7 @@ class List(NonScalarType):
                 # must conform to.
                 raise ValueError("List data type must have exactly one child.")
             child_data_type = registry[child.tag]
-            self._children["item"] = child_data_type.from_xml(child)
+            self._children["item"] = child_data_type.from_xml(child, document_store)
 
 
 @register_type("object")
@@ -364,10 +432,10 @@ class Object(NonScalarType):
 
         return schema
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child)
+            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
 
 
 @register_type("choice")
@@ -396,11 +464,11 @@ class Choice(NonScalarType):
         schema[key] = value
         return schema
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
             assert child_data_type == Case
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child)
+            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
 
     @property
     def validators(self) -> TypedList:
@@ -435,12 +503,12 @@ class Case(NonScalarType):
 
         return schema
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         assert len(element) == 1, "Case must have exactly one child."
 
         for child in element:
             child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child)
+            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
 
 
 @register_type("pydantic")
@@ -476,10 +544,10 @@ class Pydantic(NonScalarType):
             on_fail = self.element.attrib[on_fail_attr_name]
         return [PydanticValidator(self.model, on_fail=on_fail)]
 
-    def set_children(self, element: ET._Element):
+    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child)
+            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
 
     @classmethod
     def from_xml(cls, element: ET._Element, strict: bool = False) -> "DataType":
@@ -493,7 +561,7 @@ class Pydantic(NonScalarType):
             raise ValueError(f"Invalid Pydantic model: {model_name}")
 
         data_type = cls(model, {}, FormatAttr(), element)
-        data_type.set_children(element)
+        data_type.set_children(element, document_store)
         return data_type
 
     def to_object_element(self) -> ET._Element:

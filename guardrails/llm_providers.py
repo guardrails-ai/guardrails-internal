@@ -4,6 +4,7 @@ from functools import partial
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 import openai
+from guard_rails_api_client.models.validate_payload_llm_api import ValidatePayloadLlmApi
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception_type, wait_exponential_jitter
 
@@ -93,12 +94,17 @@ def openai_wrapper(
     text: str,
     engine: str = "text-davinci-003",
     instructions: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
     *args,
     **kwargs,
 ):
-    api_key = os.environ.get("OPENAI_API_KEY")
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     openai_response = openai.Completion.create(
-        api_key=api_key,
+        api_key=openai_api_key,
         engine=engine,
         prompt=nonchat_prompt(text, instructions, **kwargs),
         *args,
@@ -112,9 +118,15 @@ def openai_chat_wrapper(
     model="gpt-3.5-turbo",
     instructions: Optional[str] = None,
     base_model: Optional[BaseModel] = None,
+    openai_api_key: Optional[str] = None,
     *args,
     **kwargs,
 ):
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     if base_model:
         base_model_schema = base_model.schema()
         function_params = {
@@ -125,12 +137,10 @@ def openai_chat_wrapper(
             "parameters": base_model_schema,
         }
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-
     # TODO: update this as new models are released
     if base_model:
         openai_response = openai.ChatCompletion.create(
-            api_key=api_key,
+            api_key=openai_api_key,
             model=model,
             messages=chat_prompt(text, instructions, **kwargs),
             functions=[function_params],
@@ -141,7 +151,7 @@ def openai_chat_wrapper(
         return openai_response["choices"][0]["message"]["function_call"]["arguments"]
     else:
         openai_response = openai.ChatCompletion.create(
-            api_key=api_key,
+            api_key=openai_api_key,
             model=model,
             messages=chat_prompt(text, instructions, **kwargs),
             *args,
@@ -176,12 +186,21 @@ def manifest_wrapper(
     return manifest_response
 
 
-def get_llm_ask(llm_api: Callable, *args, **kwargs) -> PromptCallable:
+def get_llm_ask(
+    llm_api: Callable, openai_api_key: Optional[str] = None, *args, **kwargs
+) -> PromptCallable:
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     if llm_api == openai.Completion.create:
-        fn = partial(openai_wrapper, *args, **kwargs)
+        fn = partial(openai_wrapper, openai_api_key=openai_api_key, *args, **kwargs)
     elif llm_api == openai.ChatCompletion.create:
-        fn = partial(openai_chat_wrapper, *args, **kwargs)
-    elif MANIFEST and isinstance(llm_api, manifest.Manifest):
+        fn = partial(
+            openai_chat_wrapper, openai_api_key=openai_api_key, *args, **kwargs
+        )
+    elif llm_api_is_manifest(llm_api):
         fn = partial(manifest_wrapper, client=llm_api, *args, **kwargs)
     else:
         # Let the user pass in an arbitrary callable.
@@ -235,12 +254,17 @@ async def async_openai_wrapper(
     text: str,
     engine: str = "text-davinci-003",
     instructions: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
     *args,
     **kwargs,
 ):
-    api_key = os.environ.get("OPENAI_API_KEY")
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     openai_response = await openai.Completion.acreate(
-        api_key=api_key,
+        api_key=openai_api_key,
         engine=engine,
         prompt=nonchat_prompt(text, instructions, **kwargs),
         *args,
@@ -253,12 +277,17 @@ async def async_openai_chat_wrapper(
     text: str,
     model="gpt-3.5-turbo",
     instructions: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
     *args,
     **kwargs,
 ):
-    api_key = os.environ.get("OPENAI_API_KEY")
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     openai_response = await openai.ChatCompletion.acreate(
-        api_key=api_key,
+        api_key=openai_api_key,
         model=model,
         messages=chat_prompt(text, instructions, **kwargs),
         *args,
@@ -293,15 +322,46 @@ async def async_manifest_wrapper(
     return manifest_response
 
 
-def get_async_llm_ask(llm_api: Callable[[Any], Awaitable[Any]], *args, **kwargs):
+def get_async_llm_ask(
+    llm_api: Callable[[Any], Awaitable[Any]],
+    openai_api_key: Optional[str] = None,
+    *args,
+    **kwargs,
+):
+    openai_api_key = (
+        openai_api_key
+        if openai_api_key is not None
+        else os.environ.get("OPENAI_API_KEY")
+    )
     if llm_api == openai.Completion.acreate:
-        fn = partial(async_openai_wrapper, *args, **kwargs)
+        fn = partial(
+            async_openai_wrapper, openai_api_key=openai_api_key, *args, **kwargs
+        )
     elif llm_api == openai.ChatCompletion.acreate:
-        fn = partial(async_openai_chat_wrapper, *args, **kwargs)
-    elif MANIFEST and isinstance(llm_api, manifest.Manifest):
+        fn = partial(
+            async_openai_chat_wrapper, openai_api_key=openai_api_key, *args, **kwargs
+        )
+    elif llm_api_is_manifest(llm_api):
         fn = partial(async_manifest_wrapper, client=llm_api, *args, **kwargs)
     else:
         # Let the user pass in an arbitrary callable.
         fn = partial(llm_api, *args, **kwargs)
 
     return AsyncPromptCallable(fn=fn)
+
+
+def get_llm_api_enum(llm_api: Callable[[Any], Awaitable[Any]]) -> ValidatePayloadLlmApi:
+    if llm_api == openai.Completion.create:
+        return ValidatePayloadLlmApi.OPENAI_COMPLETION_CREATE
+    elif llm_api == openai.ChatCompletion.create:
+        return ValidatePayloadLlmApi.OPENAI_CHATCOMPLETION_CREATE
+    elif llm_api == openai.Completion.acreate:
+        return ValidatePayloadLlmApi.OPENAI_COMPLETION_ACREATE
+    elif llm_api == openai.ChatCompletion.acreate:
+        return ValidatePayloadLlmApi.OPENAI_CHATCOMPLETION_ACREATE
+    else:
+        return None
+
+
+def llm_api_is_manifest(llm_api: Callable[[Any], Awaitable[Any]]) -> bool:
+    return MANIFEST and isinstance(llm_api, manifest.Manifest)
