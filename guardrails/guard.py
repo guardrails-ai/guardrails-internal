@@ -26,6 +26,7 @@ from guardrails.schema import Schema
 from guardrails.utils.logs_utils import GuardState
 from guardrails.utils.reask_utils import sub_reasks_with_fixed_values
 from guardrails.validators import Validator
+from guardrails.classes import ValidationOutcome
 
 logger = logging.getLogger(__name__)
 actions_logger = logging.getLogger(f"{__name__}.actions")
@@ -267,7 +268,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Union[Tuple[str, Dict], Awaitable[Tuple[str, Dict]]]:
+    ) -> Union[ValidationOutcome, Awaitable[ValidationOutcome]]:
         """Call the LLM and validate the output. Pass an async LLM API to
         return a coroutine.
 
@@ -345,7 +346,7 @@ class Guard:
         full_schema_reask: bool,
         *args,
         **kwargs,
-    ) -> Tuple[str, Dict]:
+    ) -> ValidationOutcome:
         instructions_obj = instructions or self.instructions
         prompt_obj = prompt or self.prompt
         msg_history_obj = msg_history or []
@@ -373,7 +374,7 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = runner(prompt_params=prompt_params)
-            return guard_history.output, guard_history.validated_output
+            return ValidationOutcome.from_guard_history(guard_history)
 
     async def _call_async(
         self,
@@ -387,7 +388,7 @@ class Guard:
         full_schema_reask: bool,
         *args,
         **kwargs,
-    ) -> Tuple[str, Dict]:
+    ) -> ValidationOutcome:
         """Call the LLM asynchronously and validate the output.
 
         Args:
@@ -432,7 +433,7 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = await runner.async_run(prompt_params=prompt_params)
-            return guard_history.output, guard_history.validated_output
+            return ValidationOutcome.from_guard_history(guard_history)
 
     def __repr__(self):
         return f"Guard(RAIL={self.rail})"
@@ -451,7 +452,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Dict:
+    ) -> ValidationOutcome:
         ...
 
     @overload
@@ -465,7 +466,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Awaitable[Dict]:
+    ) -> Awaitable[ValidationOutcome]:
         ...
 
     @overload
@@ -479,7 +480,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Dict:
+    ) -> ValidationOutcome:
         ...
 
     def parse(
@@ -492,7 +493,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Union[Dict, Awaitable[Dict]]:
+    ) -> Union[ValidationOutcome, Awaitable[ValidationOutcome]]:
         """Alternate flow to using Guard where the llm_output is known.
 
         Args:
@@ -559,7 +560,7 @@ class Guard:
         full_schema_reask: bool,
         *args,
         **kwargs,
-    ) -> Dict:
+    ) -> ValidationOutcome:
         """Alternate flow to using Guard where the llm_output is known.
 
         Args:
@@ -589,7 +590,8 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = runner(prompt_params=prompt_params)
-            return sub_reasks_with_fixed_values(guard_history.validated_output)
+            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(guard_history.validated_output)
+            return ValidationOutcome.from_guard_history(guard_history)
 
     async def _async_parse(
         self,
@@ -631,4 +633,5 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = await runner.async_run(prompt_params=prompt_params)
-            return sub_reasks_with_fixed_values(guard_history.validated_output)
+            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(guard_history.validated_output)
+            return ValidationOutcome.from_guard_history(guard_history)
