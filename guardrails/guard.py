@@ -18,6 +18,7 @@ from typing import (
 from eliot import add_destinations, start_action
 from pydantic import BaseModel
 
+from guardrails.classes import ValidationOutcome
 from guardrails.llm_providers import get_async_llm_ask, get_llm_ask
 from guardrails.prompt import Instructions, Prompt
 from guardrails.rail import Rail
@@ -26,7 +27,6 @@ from guardrails.schema import Schema
 from guardrails.utils.logs_utils import GuardState
 from guardrails.utils.reask_utils import sub_reasks_with_fixed_values
 from guardrails.validators import Validator
-from guardrails.classes import ValidationOutcome
 
 logger = logging.getLogger(__name__)
 actions_logger = logging.getLogger(f"{__name__}.actions")
@@ -590,7 +590,9 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = runner(prompt_params=prompt_params)
-            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(guard_history.validated_output)
+            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
+                guard_history.validated_output
+            )
             return ValidationOutcome.from_guard_history(guard_history)
 
     async def _async_parse(
@@ -633,5 +635,7 @@ class Guard:
                 full_schema_reask=full_schema_reask,
             )
             guard_history = await runner.async_run(prompt_params=prompt_params)
-            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(guard_history.validated_output)
+            guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
+                guard_history.validated_output
+            )
             return ValidationOutcome.from_guard_history(guard_history)
