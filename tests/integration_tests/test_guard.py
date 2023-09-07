@@ -135,7 +135,7 @@ def test_entity_extraction_with_reask(
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt)
 
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
@@ -144,7 +144,7 @@ def test_entity_extraction_with_reask(
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_REASK_2
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_REASK_2
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -214,14 +214,14 @@ def test_entity_extraction_with_noop(mocker, rail, prompt):
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_NOOP
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_NOOP
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -250,14 +250,14 @@ def test_entity_extraction_with_filter(mocker, rail, prompt):
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_FILTER
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_FILTER
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -285,14 +285,14 @@ def test_entity_extraction_with_fix(mocker, rail, prompt):
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_FIX
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_FIX
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -321,14 +321,14 @@ def test_entity_extraction_with_refrain(mocker, rail, prompt):
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_REFRAIN
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_REFRAIN
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -364,14 +364,14 @@ def test_entity_extraction_with_fix_chat_models(mocker, rail, prompt, instructio
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = guard_initializer(rail, prompt, instructions)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.ChatCompletion.create,
         prompt_params={"document": content[:6000]},
         num_reasks=1,
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_FIX
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_FIX
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -394,12 +394,13 @@ def test_string_output(mocker):
     mocker.patch("guardrails.llm_providers.OpenAICallable", new=MockOpenAICallable)
 
     guard = gd.Guard.from_rail_string(string.RAIL_SPEC_FOR_STRING)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"ingredients": "tomato, cheese, sour cream"},
         num_reasks=1,
     )
-    assert final_output == string.LLM_OUTPUT
+
+    assert final_output.validated_output == string.LLM_OUTPUT
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -416,14 +417,14 @@ def test_string_reask(mocker):
     mocker.patch("guardrails.llm_providers.OpenAICallable", new=MockOpenAICallable)
 
     guard = gd.Guard.from_rail_string(string.RAIL_SPEC_FOR_STRING_REASK)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"ingredients": "tomato, cheese, sour cream"},
         num_reasks=1,
         max_tokens=100,
     )
 
-    assert final_output == string.LLM_OUTPUT_REASK
+    assert final_output.validated_output == string.LLM_OUTPUT_REASK
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -449,7 +450,7 @@ def test_skeleton_reask(mocker):
 
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = gd.Guard.from_rail_string(entity_extraction.RAIL_SPEC_WITH_SKELETON_REASK)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.Completion.create,
         prompt_params={"document": content[:6000]},
         max_tokens=1000,
@@ -457,7 +458,7 @@ def test_skeleton_reask(mocker):
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_SKELETON_REASK_2
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_SKELETON_REASK_2
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -573,7 +574,7 @@ def test_entity_extraction_with_reask_with_optional_prompts(
     content = gd.docs_utils.read_pdf("docs/examples/data/chase_card_agreement.pdf")
     guard = Guard.from_rail_string(rail)
 
-    _, final_output = guard(
+    final_output = guard(
         llm_api=llm_api,
         prompt=prompt,
         instructions=instructions,
@@ -583,7 +584,7 @@ def test_entity_extraction_with_reask_with_optional_prompts(
     )
 
     # Assertions are made on the guard state object.
-    assert final_output == entity_extraction.VALIDATED_OUTPUT_REASK_2
+    assert final_output.validated_output == entity_extraction.VALIDATED_OUTPUT_REASK_2
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -648,14 +649,14 @@ def test_string_with_message_history_reask(mocker):
     )
 
     guard = gd.Guard.from_rail_string(string.RAIL_SPEC_FOR_MSG_HISTORY)
-    _, final_output = guard(
+    final_output = guard(
         llm_api=openai.ChatCompletion.create,
         msg_history=string.MOVIE_MSG_HISTORY,
         temperature=0.0,
         model="gpt-3.5-turbo",
     )
 
-    assert final_output == string.MSG_LLM_OUTPUT_CORRECT
+    assert final_output.validated_output == string.MSG_LLM_OUTPUT_CORRECT
 
     guard_history = guard.guard_state.most_recent_call.history
 
@@ -684,15 +685,15 @@ def test_pydantic_with_message_history_reask(mocker):
     )
 
     guard = gd.Guard.from_pydantic(output_class=pydantic.WITH_MSG_HISTORY)
-    raw_output, guarded_output = guard(
+    final_output = guard(
         llm_api=openai.ChatCompletion.create,
         msg_history=string.MOVIE_MSG_HISTORY,
         temperature=0.0,
         model="gpt-3.5-turbo",
     )
 
-    assert raw_output == pydantic.MSG_HISTORY_LLM_OUTPUT_CORRECT
-    assert guarded_output == json.loads(pydantic.MSG_HISTORY_LLM_OUTPUT_CORRECT)
+    assert final_output.raw_llm_output == pydantic.MSG_HISTORY_LLM_OUTPUT_CORRECT
+    assert final_output.validated_output == json.loads(pydantic.MSG_HISTORY_LLM_OUTPUT_CORRECT)
 
     guard_history = guard.guard_state.most_recent_call.history
 
