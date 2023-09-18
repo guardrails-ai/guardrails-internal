@@ -237,7 +237,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Awaitable[Tuple[str, Dict]]:
+    ) -> Awaitable[ValidationOutcome]:
         ...
 
     @overload
@@ -253,7 +253,7 @@ class Guard:
         full_schema_reask: Optional[bool] = None,
         *args,
         **kwargs,
-    ) -> Tuple[str, Dict]:
+    ) -> ValidationOutcome:
         ...
 
     def __call__(
@@ -593,9 +593,7 @@ class Guard:
             guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
                 guard_history.validated_output
             )
-            print("before ValidationOutcome.from_guard_history - type(validated_output): ", type(guard_history.validated_output))
             validation_outcome = ValidationOutcome.from_guard_history(guard_history)
-            print("after ValidationOutcome.from_guard_history - type(validated_output): ", type(validation_outcome.validated_output))
             return validation_outcome
 
     async def _async_parse(
