@@ -199,7 +199,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hullo"}
+    assert output.validated_output == {"a_field": "hullo"}
 
     # (string, on_fail) tuple fix
 
@@ -214,7 +214,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hullo"}
+    assert output.validated_output == {"a_field": "hullo"}
 
     # (Validator, on_fail) tuple fix
 
@@ -227,7 +227,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hello there"}
+    assert output.validated_output == {"a_field": "hello there"}
 
     # (Validator, on_fail) tuple reask
 
@@ -252,7 +252,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hullo"}
+    assert output.validated_output == {"a_field": "hullo"}
     assert (
         guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
         == hullo_reask
@@ -281,7 +281,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hello there"}
+    assert output.validated_output == {"a_field": "hello there"}
     assert (
         guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
         == hello_reask
@@ -299,7 +299,7 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hello there"}
+    assert output.validated_output == {"a_field": "hello there"}
     assert (
         guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
         == hello_reask
@@ -331,7 +331,7 @@ def test_custom_func_validator():
         '{"greeting": "hello"}',
         num_reasks=0,
     )
-    assert output == {"greeting": "hullo"}
+    assert output.validated_output == {"greeting": "hullo"}
 
     guard_history = guard.guard_state.all_histories[0].history
     assert len(guard_history) == 1
@@ -392,7 +392,7 @@ def test_provenance_v1(mocker):
         llm_output=LLM_RESPONSE,
         metadata={"query_function": mock_chromadb_query_function},
     )
-    assert output == LLM_RESPONSE
+    assert output.validated_output == LLM_RESPONSE
 
     # 2. Setting the environment variable
     os.environ["OPENAI_API_KEY"] = API_KEY
@@ -400,7 +400,7 @@ def test_provenance_v1(mocker):
         llm_output=LLM_RESPONSE,
         metadata={"query_function": mock_chromadb_query_function},
     )
-    assert output == LLM_RESPONSE
+    assert output.validated_output == LLM_RESPONSE
 
     # 3. Passing the API key as an argument
     output = string_guard.parse(
@@ -409,7 +409,7 @@ def test_provenance_v1(mocker):
         api_key=API_KEY,
         api_base="https://api.openai.com",
     )
-    assert output == LLM_RESPONSE
+    assert output.validated_output == LLM_RESPONSE
 
 
 @pytest.mark.parametrize(
