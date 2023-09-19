@@ -10,8 +10,8 @@ from lxml import etree as ET
 from typing_extensions import Self
 
 from guardrails.document_store import DocumentStoreBase
-from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.casting_utils import to_float, to_int, to_string
+from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.validators import Validator
 
 if TYPE_CHECKING:
@@ -48,10 +48,7 @@ class DataType:
     rail_alias: str
 
     def __init__(
-        self,
-        children: Dict[str, Any],
-        format_attr: "FormatAttr",
-        element: ET._Element
+        self, children: Dict[str, Any], format_attr: "FormatAttr", element: ET._Element
     ) -> None:
         self._children = children
         self.format_attr = format_attr
@@ -132,11 +129,16 @@ class DataType:
         value = self.from_str(value)
         return self._constructor_validation(key, value)
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         raise NotImplementedError("Abstract method.")
 
     @classmethod
-    def from_xml(cls, element: ET._Element, document_store: DocumentStoreBase, strict: bool = False) -> Self:
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> Self:
         from guardrails.schema import FormatAttr
 
         # TODO: don't want to pass strict through to DataType,
@@ -179,7 +181,7 @@ class DataType:
                     validator_tag = attr_key
                     validator_on_fail = {
                         "validatorTag": validator_tag,
-                        "method": on_fail_method
+                        "method": on_fail_method,
                     }
                     on_fails.append(validator_on_fail)
             element_model = self.element.get("model")
@@ -239,7 +241,7 @@ def register_type(name: str):
 
 
 class ScalarType(DataType):
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for _ in element:
             raise ValueError("ScalarType data type must not have any children.")
 
@@ -317,7 +319,12 @@ class Date(ScalarType):
         return datetime.datetime.strptime(s, self.date_format).date()
 
     @classmethod
-    def from_xml(cls, element: ET._Element, document_store: DocumentStoreBase, strict: bool = False) -> "Date":
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> "Date":
         datatype = super().from_xml(element, document_store, strict)
 
         if "date-format" in element.attrib or "date_format" in element.attrib:
@@ -348,7 +355,12 @@ class Time(ScalarType):
         return datetime.datetime.strptime(s, self.time_format).time()
 
     @classmethod
-    def from_xml(cls, element: ET._Element,  document_store: DocumentStoreBase, strict: bool = False) -> "Time":
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> "Time":
         datatype = super().from_xml(element, strict)
 
         if "time-format" in element.attrib or "time_format" in element.attrib:
@@ -458,7 +470,7 @@ class Object(NonScalarType):
 
         return validation
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
             name = child.attrib["name"]
@@ -495,7 +507,7 @@ class Choice(NonScalarType):
 
         return validation
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
             assert child_data_type == Case
@@ -542,7 +554,7 @@ class Case(NonScalarType):
 
         return validation
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
             name = child.attrib["name"]

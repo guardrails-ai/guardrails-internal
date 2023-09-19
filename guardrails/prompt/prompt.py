@@ -38,5 +38,6 @@ class Prompt(BasePrompt):
         # Return another instance of the class with the formatted prompt.
         formatted_prompt = Template(self.source).safe_substitute(**filtered_kwargs)
         return Prompt(formatted_prompt)
+
     def _to_request(self) -> str:
         return self.source

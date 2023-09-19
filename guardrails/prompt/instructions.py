@@ -26,7 +26,7 @@ class Instructions(BasePrompt):
     def format(self, **kwargs):
         """Format the prompt using the given keyword arguments."""
         # Only use the keyword arguments that are present in the prompt.
-        
+
         # FIXME: Is the super format call still necesary?
         # filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.variable_names}
 

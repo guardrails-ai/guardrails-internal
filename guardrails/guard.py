@@ -74,7 +74,7 @@ class Guard:
         base_model: Optional[Type[BaseModel]] = None,
         name: Optional[str] = None,  # TODO: Make name mandatory on next major version
         openai_api_key: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ):
         """Initialize the Guard."""
         self.rail = rail
@@ -91,7 +91,6 @@ class Guard:
         )
         self.description = description
 
-        
         api_key = os.environ.get("GUARDRAILS_API_KEY")
         if api_key is not None:
             if name is None:
@@ -193,7 +192,13 @@ class Guard:
         )
 
     @classmethod
-    def from_rail(cls, rail_file: str, num_reasks: Optional[int] = None, name: Optional[str] = None, description: Optional[str] = None) -> "Guard":
+    def from_rail(
+        cls,
+        rail_file: str,
+        num_reasks: Optional[int] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> "Guard":
         """Create a Schema from a `.rail` file.
 
         Args:
@@ -204,11 +209,20 @@ class Guard:
             An instance of the `Guard` class.
         """
 
-        return cls(Rail.from_file(rail_file), num_reasks=num_reasks, name=name, description=description)
+        return cls(
+            Rail.from_file(rail_file),
+            num_reasks=num_reasks,
+            name=name,
+            description=description,
+        )
 
     @classmethod
     def from_rail_string(
-        cls, rail_string: str, num_reasks: Optional[int] = None, name: Optional[str] = None, description: Optional[str] = None
+        cls,
+        rail_string: str,
+        num_reasks: Optional[int] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> "Guard":
         """Create a Schema from a `.rail` string.
 
@@ -219,7 +233,12 @@ class Guard:
         Returns:
             An instance of the `Guard` class.
         """
-        return cls(Rail.from_string(rail_string), num_reasks=num_reasks, name=name, description=description)
+        return cls(
+            Rail.from_string(rail_string),
+            num_reasks=num_reasks,
+            name=name,
+            description=description,
+        )
 
     @classmethod
     def from_pydantic(
@@ -229,13 +248,19 @@ class Guard:
         instructions: Optional[str] = None,
         num_reasks: Optional[int] = None,
         name: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> "Guard":
         """Create a Guard instance from a Pydantic model and prompt."""
         rail = Rail.from_pydantic(
             output_class=output_class, prompt=prompt, instructions=instructions
         )
-        return cls(rail, num_reasks=num_reasks, base_model=output_class, name=name, description=description)
+        return cls(
+            rail,
+            num_reasks=num_reasks,
+            base_model=output_class,
+            name=name,
+            description=description,
+        )
 
     @classmethod
     def from_string(
@@ -418,7 +443,9 @@ class Guard:
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
-                api=get_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs),
+                api=get_llm_ask(
+                    llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+                ),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
@@ -477,7 +504,9 @@ class Guard:
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
-                api=get_async_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs),
+                api=get_async_llm_ask(
+                    llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+                ),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
@@ -637,7 +666,11 @@ class Guard:
         Returns:
             The validated response.
         """
-        api = get_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs) if llm_api else None
+        api = (
+            get_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs)
+            if llm_api
+            else None
+        )
         with start_action(action_type="guard_parse"):
             runner = Runner(
                 instructions=kwargs.get("instructions", None),
@@ -679,7 +712,13 @@ class Guard:
         Returns:
             The validated response.
         """
-        api = get_async_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs) if llm_api else None
+        api = (
+            get_async_llm_ask(
+                llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+            )
+            if llm_api
+            else None
+        )
         with start_action(action_type="guard_parse"):
             runner = AsyncRunner(
                 instructions=None,

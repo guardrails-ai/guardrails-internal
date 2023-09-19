@@ -37,6 +37,7 @@ from guardrails.utils.reask_utils import (
     get_reasks_by_element,
     prune_obj_for_reasking,
 )
+from guardrails.utils.transform_utils import flatten, merge
 from guardrails.validator_service import FieldValidation
 from guardrails.validators import (
     FailResult,
@@ -44,7 +45,6 @@ from guardrails.validators import (
     check_refrain_in_dict,
     filter_in_dict,
 )
-from guardrails.utils.transform_utils import flatten, merge
 
 if TYPE_CHECKING:
     pass
@@ -206,7 +206,9 @@ class FormatAttr:
         except AttributeError:
             raise AttributeError("Must call `get_validators` first.")
 
-    def get_validators(self, document_store: DocumentStoreBase, strict: bool = False) -> List[Validator]:
+    def get_validators(
+        self, document_store: DocumentStoreBase, strict: bool = False
+    ) -> List[Validator]:
         """Get the list of validators from the format attribute. Only the
         validators that are registered for this element will be returned.
 
@@ -277,7 +279,9 @@ class FormatAttr:
                 # beginning of a rail file.
 
             # Create the validator.
-            _validators.append(validator(*args, document_store=document_store, on_fail=on_fail))
+            _validators.append(
+                validator(*args, document_store=document_store, on_fail=on_fail)
+            )
 
         self._validators = _validators
         self._unregistered_validators = _unregistered_validators
@@ -592,7 +596,9 @@ class JsonSchema(Schema):
             if isinstance(child, ET._Comment):
                 continue
             child_name = child.attrib["name"]
-            child_data = types_registry[child.tag].from_xml(child, self._store, strict=strict)
+            child_data = types_registry[child.tag].from_xml(
+                child, self._store, strict=strict
+            )
             if isinstance(child_name, bytes):
                 child_name = child_name.decode("utf-8")
             self[child_name] = child_data

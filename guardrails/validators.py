@@ -260,7 +260,12 @@ class Validator:
     override_value_on_pass = False
     required_metadata_keys = []
 
-    def __init__(self, on_fail: Optional[Union[Callable, str]] = None, document_store: Optional[DocumentStoreBase] = None, **kwargs):
+    def __init__(
+        self,
+        on_fail: Optional[Union[Callable, str]] = None,
+        document_store: Optional[DocumentStoreBase] = None,
+        **kwargs,
+    ):
         if on_fail is None:
             on_fail = "noop"
         if isinstance(on_fail, str):
@@ -431,7 +436,9 @@ class ValidRange(Validator):
         on_fail: Optional[Callable] = None,
         document_store: Optional[DocumentStoreBase] = None,
     ):
-        super().__init__(on_fail=on_fail, min=min, max=max, document_store=document_store)
+        super().__init__(
+            on_fail=on_fail, min=min, max=max, document_store=document_store
+        )
 
         self._min = min
         self._max = max
@@ -473,8 +480,15 @@ class ValidChoices(Validator):
         choices: The list of valid choices.
     """
 
-    def __init__(self, choices: List[Any], document_store: Optional[DocumentStoreBase] = None, on_fail: Optional[Callable] = None):
-        super().__init__(document_store=document_store, on_fail=on_fail, choices=choices)
+    def __init__(
+        self,
+        choices: List[Any],
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: Optional[Callable] = None,
+    ):
+        super().__init__(
+            document_store=document_store, on_fail=on_fail, choices=choices
+        )
         self._choices = choices
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -563,7 +577,9 @@ class ValidLength(Validator):
         on_fail: Optional[Callable] = None,
         document_store: Optional[DocumentStoreBase] = None,
     ):
-        super().__init__(document_store=document_store, on_fail=on_fail, min=min, max=max)
+        super().__init__(
+            document_store=document_store, on_fail=on_fail, min=min, max=max
+        )
         self._min = int(min) if min is not None else None
         self._max = int(max) if max is not None else None
 
@@ -814,7 +830,12 @@ class SqlColumnPresence(Validator):
         cols: The list of valid columns.
     """
 
-    def __init__(self, cols: List[str], document_store: Optional[DocumentStoreBase] = None, on_fail: Optional[Callable] = None):
+    def __init__(
+        self,
+        cols: List[str],
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: Optional[Callable] = None,
+    ):
         super().__init__(documnet_store=document_store, on_fail=on_fail, cols=cols)
         self._cols = set(cols)
 
@@ -855,8 +876,15 @@ class ExcludeSqlPredicates(Validator):
         predicates: The list of predicates to avoid.
     """
 
-    def __init__(self, predicates: List[str], document_store: Optional[DocumentStoreBase] = None, on_fail: Optional[Callable] = None):
-        super().__init__(document_store=document_store, on_fail=on_fail, predicates=predicates)
+    def __init__(
+        self,
+        predicates: List[str],
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: Optional[Callable] = None,
+    ):
+        super().__init__(
+            document_store=document_store, on_fail=on_fail, predicates=predicates
+        )
         self._predicates = set(predicates)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -908,10 +936,14 @@ class SimilarToDocument(Validator):
         document: str,
         threshold: float = 0.7,
         model: str = "text-embedding-ada-002",
-        on_fail: Optional[Callable] = None, 
+        on_fail: Optional[Callable] = None,
     ):
         super().__init__(
-            document_store=document_store, on_fail=on_fail, document=document, threshold=threshold, model=model
+            document_store=document_store,
+            on_fail=on_fail,
+            document=document,
+            threshold=threshold,
+            model=model,
         )
         if not _HAS_NUMPY:
             raise ImportError(
@@ -1075,7 +1107,12 @@ class EndsWith(Validator):
         end: The required last element.
     """
 
-    def __init__(self, end: str, document_store: Optional[DocumentStoreBase] = None, on_fail: str = "fix"):
+    def __init__(
+        self,
+        end: str,
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: str = "fix",
+    ):
         super().__init__(document_store=document_store, on_fail=on_fail, end=end)
         self._end = end
 
@@ -1248,8 +1285,15 @@ class ReadingTime(Validator):
         reading_time: The maximum reading time.
     """
 
-    def __init__(self, reading_time: int, document_store: Optional[DocumentStoreBase] = None, on_fail: str = "fix"):
-        super().__init__(documnet_store=document_store, on_fail=on_fail, max_time=reading_time)
+    def __init__(
+        self,
+        reading_time: int,
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: str = "fix",
+    ):
+        super().__init__(
+            documnet_store=document_store, on_fail=on_fail, max_time=reading_time
+        )
         self._max_time = reading_time
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -1418,7 +1462,11 @@ class RemoveRedundantSentences(Validator):
     """
 
     def __init__(
-        self, threshold: int = 70, document_store: Optional[DocumentStoreBase] = None, on_fail: Optional[Callable] = None, **kwargs
+        self,
+        threshold: int = 70,
+        document_store: Optional[DocumentStoreBase] = None,
+        on_fail: Optional[Callable] = None,
+        **kwargs,
     ):
         super().__init__(on_fail, document_store=document_store, **kwargs)
         self._threshold = threshold

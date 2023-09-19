@@ -13,7 +13,12 @@ from guardrails.utils.constants import constants
 class BasePrompt:
     """Base class for representing an LLM prompt."""
 
-    def __init__(self, source: str, output_schema: Optional[str] = None, format_instructions_start: Optional[int] = None):
+    def __init__(
+        self,
+        source: str,
+        output_schema: Optional[str] = None,
+        format_instructions_start: Optional[int] = None,
+    ):
         # FIXME: Is this still necessary?
         # self.format_instructions_start = self.get_format_instructions_idx(source) if format_instructions_start is None else format_instructions_start
         self.format_instructions_start = self.get_format_instructions_idx(source)

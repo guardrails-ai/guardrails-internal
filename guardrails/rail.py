@@ -7,9 +7,9 @@ from typing import Dict, List, Optional, Type
 from lxml import etree as ET
 from lxml.etree import Element, SubElement
 from pydantic import BaseModel
+
 from guardrails import document_store
 from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
-
 from guardrails.prompt import Instructions, Prompt
 from guardrails.schema import JsonSchema, Schema, StringSchema
 from guardrails.utils.pydantic_utils import (
@@ -35,20 +35,20 @@ class Rail:
         3. `<prompt>`, which contains the prompt to be passed to the LLM
         4. `<instructions>`, which contains the instructions to be passed to the LLM
     """
+
     api_key = os.environ.get("GUARDRAILS_API_KEY")
     if api_key is not None:
         from guardrails.ingestion_service import IngestionServiceDocumentStore
-        document_store  = IngestionServiceDocumentStore(api_key=api_key)
+
+        document_store = IngestionServiceDocumentStore(api_key=api_key)
     else:
         document_store = EphemeralDocumentStore()
-    
 
     input_schema: Optional[Schema]
     output_schema: Schema
     instructions: Optional[Instructions]
     prompt: Optional[Prompt]
     version: str = "0.1"
-
 
     @classmethod
     def from_pydantic(
@@ -170,7 +170,9 @@ class Rail:
         return Schema(document_store, root=root)
 
     @staticmethod
-    def load_input_schema(root: ET._Element, document_store: DocumentStoreBase) -> Schema:
+    def load_input_schema(
+        root: ET._Element, document_store: DocumentStoreBase
+    ) -> Schema:
         """Given the RAIL <input> element, create a Schema object."""
         # Recast the schema as an InputSchema.
         return Schema(document_store, root=root)

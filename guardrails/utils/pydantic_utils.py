@@ -238,7 +238,7 @@ def attach_validators_to_element(
                     )
                 validator_prompt = validator.rail_alias
                 on_fails[validator.rail_alias] = on_fail
-                if hasattr(validator, 'namespace'):
+                if hasattr(validator, "namespace"):
                     plugins_prompt.append(validator.namespace)
             else:
                 raise ValueError(
