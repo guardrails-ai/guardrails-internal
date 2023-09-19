@@ -1,5 +1,5 @@
 """Instructions to the LLM, to be passed in the prompt."""
-from string import Formatter, Template
+from string import Template
 from warnings import warn
 
 from .base_prompt import BasePrompt
@@ -41,7 +41,7 @@ class Instructions(BasePrompt):
         # formatted_source.format(**filtered_kwargs),
         # format_instructions_start=self.format_instructions_start)
 
-        vars = [x[1] for x in Formatter().parse(self.source) if x[1] is not None]
+        vars = Template(self.source).get_identifiers()
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in vars}
         if len(filtered_kwargs) == 0:
             warn(

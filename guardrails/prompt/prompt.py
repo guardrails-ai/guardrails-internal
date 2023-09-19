@@ -1,6 +1,6 @@
 """The LLM prompt."""
 import warnings
-from string import Formatter, Template
+from string import Template
 
 from .base_prompt import BasePrompt
 
@@ -33,7 +33,7 @@ class Prompt(BasePrompt):
         # format_instructions_start=self.format_instructions_start
         # )
 
-        vars = [x[1] for x in Formatter().parse(self.source) if x[1] is not None]
+        vars = Template(self.source).get_identifiers()
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in vars}
         if len(filtered_kwargs) == 0:
             warnings.warn(

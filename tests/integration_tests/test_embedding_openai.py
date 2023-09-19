@@ -60,7 +60,10 @@ class TestOpenAIEmbedding:
         assert result == [1.0, 2.0, 3.0]
 
     @patch("os.environ.get", return_value="test_api_key")
-    @patch("openai.Embedding.create", return_value=MockResponse(data=[{ "embedding": [1.0, 2.0, 3.0] }]))
+    @patch(
+        "openai.Embedding.create",
+        return_value=MockResponse(data=[{"embedding": [1.0, 2.0, 3.0]}]),
+    )
     def test_get_embedding(self, mock_create, mock_get_env):
         instance = OpenAIEmbedding(api_key="test_api_key")
         result = instance._get_embedding(["test text"])

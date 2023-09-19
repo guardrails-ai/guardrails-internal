@@ -4,7 +4,7 @@ import logging
 import os
 import random
 import string
-from string import Formatter
+from string import Template
 from typing import (
     Any,
     Awaitable,
@@ -73,7 +73,9 @@ class Guard:
         num_reasks: Optional[int] = None,
         base_model: Optional[Type[BaseModel]] = None,
         name: Optional[str] = None,  # TODO: Make name mandatory on next major version
-        openai_api_key: Optional[str] = None, # TODO: Turn this into an auth object to support multiple LLM auth keys at once
+        openai_api_key: Optional[
+            str
+        ] = None,  # TODO: conver to auth object to support multiple LLM auth keys at once
         description: Optional[str] = None,
     ):
         """Initialize the Guard."""
@@ -156,9 +158,7 @@ class Guard:
             reask_prompt = Prompt(reask_prompt)
 
         # Check that the reask prompt has the correct variables
-        variables = [
-            t[1] for t in Formatter().parse(reask_prompt.source) if t[1] is not None
-        ]
+        variables = Template(reask_prompt.source).get_identifiers()
         variable_set = set(variables)
         assert variable_set.__contains__("previous_response")
         assert variable_set.__contains__("output_schema")
@@ -438,17 +438,15 @@ class Guard:
                     "Alternatively, you can provide a prompt in the Schema constructor."
                 )
 
-        if 'api_key' not in kwargs:
-            kwargs['api_key'] = self.openai_api_key
+        if "api_key" not in kwargs:
+            kwargs["api_key"] = self.openai_api_key
 
         with start_action(action_type="guard_call", prompt_params=prompt_params):
             runner = Runner(
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
-                api=get_llm_ask(
-                    llm_api, *args, **kwargs
-                ),
+                api=get_llm_ask(llm_api, *args, **kwargs),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
@@ -502,18 +500,16 @@ class Guard:
                     "You must provide a prompt if msg_history is empty. "
                     "Alternatively, you can provide a prompt in the RAIL spec."
                 )
-            
-        if 'api_key' not in kwargs:
-            kwargs['api_key'] = self.openai_api_key
+
+        if "api_key" not in kwargs:
+            kwargs["api_key"] = self.openai_api_key
 
         with start_action(action_type="guard_call", prompt_params=prompt_params):
             runner = AsyncRunner(
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
-                api=get_async_llm_ask(
-                    llm_api, *args, **kwargs
-                ),
+                api=get_async_llm_ask(llm_api, *args, **kwargs),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
@@ -673,14 +669,10 @@ class Guard:
         Returns:
             The validated response.
         """
-        if 'api_key' not in kwargs:
-            kwargs['api_key'] = self.openai_api_key
+        if "api_key" not in kwargs:
+            kwargs["api_key"] = self.openai_api_key
 
-        api = (
-            get_llm_ask(llm_api, *args, **kwargs)
-            if llm_api
-            else None
-        )
+        api = get_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = Runner(
                 instructions=kwargs.get("instructions", None),
@@ -722,15 +714,9 @@ class Guard:
         Returns:
             The validated response.
         """
-        if 'api_key' not in kwargs:
-            kwargs['api_key'] = self.openai_api_key
-        api = (
-            get_async_llm_ask(
-                llm_api, *args, **kwargs
-            )
-            if llm_api
-            else None
-        )
+        if "api_key" not in kwargs:
+            kwargs["api_key"] = self.openai_api_key
+        api = get_async_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = AsyncRunner(
                 instructions=None,

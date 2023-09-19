@@ -9,8 +9,8 @@ from guardrails.vectordb import VectorDBBase
 
 try:
     import sqlalchemy
-    import sqlalchemy.orm as orm
     import sqlalchemy.engine as Engine
+    import sqlalchemy.orm as orm
 except ImportError:
     sqlalchemy = None
     orm = None
@@ -212,12 +212,13 @@ else:
 
 class SQLMetadataStore:
     _engine: Engine
+
     def __init__(self, path: Optional[str] = None):
         self._path = path
         self._conn = f"sqlite:///{path}" if path is not None else "sqlite://"
         self._engine = None
 
-    def init_engine (self):
+    def init_engine(self):
         if not self._engine:
             self._engine = sqlalchemy.create_engine(self._conn)
             SqlDocument.metadata.create_all(self._engine, checkfirst=True)
