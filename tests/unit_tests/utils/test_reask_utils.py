@@ -13,6 +13,7 @@ from guardrails.utils.reask_utils import (
     sub_reasks_with_fixed_values,
 )
 from guardrails.validators import FailResult
+from tests.unit_tests.mocks import MockDocumentStore
 
 
 @pytest.mark.parametrize(
@@ -443,7 +444,8 @@ Here are examples of simple (XML, JSON) pairs that show the expected behavior:
 - `<list name='bar'><string format='upper-case' /></list>` => `{"bar": ['STRING ONE', 'STRING TWO', etc.]}`
 - `<object name='baz'><string name="foo" format="capitalize two-words" /><integer name="index" format="1-indexed" /></object>` => `{'baz': {'foo': 'Some String', 'index': 1}}`
 """  # noqa: E501
-    output_schema = JsonSchema(ET.fromstring(example_rail))
+    document_store = MockDocumentStore()
+    output_schema = JsonSchema(ET.fromstring(example_rail), document_store)
     guard_logs = GuardLogs()
     validated = output_schema.validate(guard_logs, original_response, {})
     reasks = output_schema.introspect(validated)

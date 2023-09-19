@@ -550,7 +550,7 @@ class JsonSchema(Schema):
 
                 # Get the pruned tree so that it only contains ReAsk objects
                 pruned_tree = get_pruned_tree(parsed_rail, list(reask_elements.keys()))
-                pruned_tree_schema = type(self)(pruned_tree)
+                pruned_tree_schema = type(self)(pruned_tree, document_store=self._store)
 
             reask_prompt_template = self.reask_prompt_template
             if reask_prompt_template is None:
@@ -843,7 +843,7 @@ class StringSchema(Schema):
         reask_instructions_template: Optional[str] = None,
     ) -> None:
         self.string_key = "string"
-        super().__init__(document_store, root=root)
+        super().__init__(root, document_store)
 
         # Setup reask templates
         if reask_prompt_template is not None:
@@ -877,7 +877,7 @@ class StringSchema(Schema):
         # make root tag into a string tag
 
         root_string = ET.Element("string", attrib)
-        self[self.string_key] = String.from_xml(root_string)
+        self[self.string_key] = String.from_xml(root_string, document_store=self._store)
 
     def get_reask_setup(
         self,

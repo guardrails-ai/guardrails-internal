@@ -238,7 +238,7 @@ def attach_validators_to_element(
                     )
                 validator_prompt = validator.rail_alias
                 on_fails[validator.rail_alias] = on_fail
-                if hasattr(validator, "namespace"):
+                if hasattr(validator, "namespace") and validator.namespace is not None:
                     plugins_prompt.append(validator.namespace)
             else:
                 raise ValueError(
@@ -259,8 +259,8 @@ def attach_validators_to_element(
             element.set("on-fail-" + rail_alias, on_fail)
 
         if len(plugins_prompt) > 0:
-            plugins_prompt = "; ".join(plugins_prompt)
-            element.set("plugins", plugins_prompt)
+            plugins_prompt_str = "; ".join(plugins_prompt)
+            element.set("plugins", plugins_prompt_str)
 
     return element
 

@@ -324,7 +324,7 @@ class Validator:
 
         validator_args = []
         for arg in self.__init__.__code__.co_varnames[1:]:
-            if arg not in ("on_fail", "args", "kwargs"):
+            if arg not in ("document_store", "on_fail", "args", "kwargs"):
                 str_arg = str(self._kwargs[arg])
                 str_arg = "{" + str_arg + "}" if " " in str_arg else str_arg
                 validator_args.append(str_arg)

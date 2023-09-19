@@ -61,9 +61,10 @@ class BasePrompt:
 
     @property
     def format_instructions(self):
-        # Now idempotent
-        hydrated_source = BasePrompt(self._source, self._output_schema).format()
-        return hydrated_source[self.format_instructions_start :]
+        # # Now idempotent
+        # hydrated_source = BasePrompt(self._source, self._output_schema).format()
+        # return hydrated_source[self.format_instructions_start :]
+        return self.source[self.format_instructions_start :]
 
     def substitute_constants(self, text):
         """Substitute constants in the prompt."""

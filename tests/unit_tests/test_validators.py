@@ -28,6 +28,7 @@ from guardrails.validators import (
     filter_in_dict,
     register_validator,
 )
+from tests.unit_tests.mocks import MockDocumentStore
 
 from .mock_embeddings import mock_create_embedding
 from .mock_provenance_v1 import mock_chat_completion, mock_chromadb_query_function
@@ -147,7 +148,8 @@ def test_summary_validators(mocker):
         ]
     }
 
-    val = ExtractedSummarySentencesMatch(threshold=0.1)
+    document_store = MockDocumentStore()
+    val = ExtractedSummarySentencesMatch(threshold=0.1, document_store=document_store)
     result = val.validate(summary, metadata)
     assert isinstance(result, PassResult)
     assert "citations" in result.metadata

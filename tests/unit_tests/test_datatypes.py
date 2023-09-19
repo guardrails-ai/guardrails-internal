@@ -3,6 +3,7 @@ from lxml.builder import E
 
 import guardrails.datatypes as datatypes
 from guardrails.schema import FormatAttr
+from tests.unit_tests.mocks import MockDocumentStore
 
 
 @pytest.mark.parametrize(
@@ -40,8 +41,9 @@ def test_get_args(input_string, expected):
 def test_date(date_format, date):
     from datetime import datetime
 
+    document_store = MockDocumentStore()
     date_element = E.date(**{"date-format": date_format})
-    date_datatype = datatypes.Date.from_xml(date_element)
+    date_datatype = datatypes.Date.from_xml(date_element, document_store)
     assert date_datatype.from_str(date) == datetime.strptime(date, date_format).date()
 
 
@@ -54,6 +56,7 @@ def test_date(date_format, date):
 def test_time(time_format, time):
     from datetime import datetime
 
+    document_store = MockDocumentStore()
     time_element = E.time(**{"time-format": time_format})
-    time_datatype = datatypes.Time.from_xml(time_element)
+    time_datatype = datatypes.Time.from_xml(time_element, document_store)
     assert time_datatype.from_str(time) == datetime.strptime(time, time_format).time()

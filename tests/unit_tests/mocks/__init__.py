@@ -2,6 +2,7 @@ from .mock_async_validator_service import MockAsyncValidatorService
 from .mock_custom_llm import MockAsyncCustomLlm, MockCustomLlm
 from .mock_loop import MockLoop
 from .mock_sequential_validator_service import MockSequentialValidatorService
+from .mock_document_store import MockDocumentStore
 
 __all__ = [
     "MockAsyncValidatorService",
@@ -9,4 +10,5 @@ __all__ = [
     "MockLoop",
     "MockCustomLlm",
     "MockAsyncCustomLlm",
+    "MockDocumentStore",
 ]
