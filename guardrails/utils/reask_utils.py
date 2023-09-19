@@ -24,7 +24,7 @@ class NonParseableReAsk(ReAsk):
     pass
 
 
-def gather_reasks(validated_output: Any) -> List[FieldReAsk]:
+def gather_reasks(validated_output: Optional[Union[str, Dict, ReAsk]]) -> List[ReAsk]:
     """Traverse output and gather all ReAsk objects.
 
     Args:
@@ -34,6 +34,10 @@ def gather_reasks(validated_output: Any) -> List[FieldReAsk]:
     Returns:
         A list of ReAsk objects found in the output.
     """
+    if validated_output is None:
+        return []
+    if isinstance(validated_output, ReAsk):
+        return [validated_output]
 
     reasks = []
 
@@ -71,8 +75,6 @@ def gather_reasks(validated_output: Any) -> List[FieldReAsk]:
 
     if isinstance(validated_output, Dict):
         _gather_reasks_in_dict(validated_output)
-    elif isinstance(validated_output, ReAsk):
-        reasks = [validated_output]
     return reasks
 
 
@@ -94,6 +96,8 @@ def get_reasks_by_element(
         path = reask.path
         # TODO: does this work for all cases?
         query = "."
+        if path is None:
+            raise RuntimeError("FieldReAsk path is None")
         for part in path:
             if isinstance(part, int):
                 query += "/*"
@@ -110,7 +114,7 @@ def get_reasks_by_element(
 
 def get_pruned_tree(
     root: ET._Element,
-    reask_elements: List[ET._Element] = None,
+    reask_elements: Optional[List[ET._Element]] = None,
 ) -> ET._Element:
     """Prune tree of any elements that are not in `reasks`.
 
@@ -133,7 +137,8 @@ def get_pruned_tree(
     for element in elements:
         if (element not in reask_elements) and len(element) == 0:
             parent = element.getparent()
-            parent.remove(element)
+            if parent is not None:
+                parent.remove(element)
 
             # Remove all ancestors that have no children
             while parent is not None and len(parent) == 0:
@@ -152,7 +157,7 @@ def get_pruned_tree(
     return root
 
 
-def prune_obj_for_reasking(obj: Any) -> Union[None, Dict, List]:
+def prune_obj_for_reasking(obj: Any) -> Union[None, Dict, List, ReAsk]:
     """After validation, we get a nested dictionary where some keys may be
     ReAsk objects.
 
