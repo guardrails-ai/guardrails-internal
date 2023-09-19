@@ -19,12 +19,19 @@ class Prompt(BasePrompt):
         # Only use the keyword arguments that are present in the prompt.
 
         # FIXME: Is the super format call still necesary?
-        # filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.variable_names}
+        # filtered_kwargs = (
+        # {k: v for k, v in kwargs.items()
+        # if k in self.variable_names}
+        # )
 
         # # Return another instance of the class with the formatted prompt.
-        # # If the convention of double escaping prompt params changes, send filtered_kwarfs to super.format instead
+        # # If the convention of double escaping prompt params changes,
+        # send filtered_kwarfs to super.format instead
         # formatted_source = super().format()
-        # return Prompt(formatted_source.format(**filtered_kwargs), format_instructions_start=self.format_instructions_start)
+        # return Prompt(
+        # formatted_source.format(**filtered_kwargs),
+        # format_instructions_start=self.format_instructions_start
+        # )
 
         vars = [x[1] for x in Formatter().parse(self.source) if x[1] is not None]
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in vars}

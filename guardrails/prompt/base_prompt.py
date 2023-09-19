@@ -20,7 +20,11 @@ class BasePrompt:
         format_instructions_start: Optional[int] = None,
     ):
         # FIXME: Is this still necessary?
-        # self.format_instructions_start = self.get_format_instructions_idx(source) if format_instructions_start is None else format_instructions_start
+        # self.format_instructions_start = (
+        # self.get_format_instructions_idx(source)
+        # if format_instructions_start is None
+        # else format_instructions_start
+        # )
         self.format_instructions_start = self.get_format_instructions_idx(source)
 
         # Substitute constants in the prompt.

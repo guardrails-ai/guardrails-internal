@@ -11,7 +11,6 @@ from typing_extensions import Self
 
 from guardrails.document_store import DocumentStoreBase
 from guardrails.utils.casting_utils import to_float, to_int, to_string
-from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.validators import Validator
 
 if TYPE_CHECKING:

@@ -1,6 +1,6 @@
 import hashlib
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from guard_rails_api_client import AuthenticatedClient
 from guard_rails_api_client.api.default import ingest

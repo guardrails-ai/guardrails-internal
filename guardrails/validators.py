@@ -20,10 +20,8 @@ import pydantic
 from pydantic import Field
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from guardrails.datatypes import registry as types_registry
 from guardrails.document_store import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
-from guardrails.utils.reask_utils import FieldReAsk
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
 from guardrails.utils.validator_utils import PROVENANCE_V1_PROMPT
 
@@ -977,7 +975,9 @@ class SimilarToDocument(Validator):
 
         # FIXME: Which embedding method should we be using?
         # GaaS Embedding method
-        # document_embedding = self.document_store.add_text(self._document, {})['embeddings']
+        # document_embedding = (
+        # self.document_store.add_text(self._document, {})['embeddings']
+        # )
         # value_embedding = self.document_store.add_text(value, schema)['embeddings']
 
         # OSS Embedding method

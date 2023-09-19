@@ -1,14 +1,13 @@
 """Rail class."""
 import os
 import warnings
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Type
+from dataclasses import dataclass
+from typing import List, Optional, Type
 
 from lxml import etree as ET
 from lxml.etree import Element, SubElement
 from pydantic import BaseModel
 
-from guardrails import document_store
 from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.prompt import Instructions, Prompt
 from guardrails.schema import JsonSchema, Schema, StringSchema
@@ -224,7 +223,7 @@ class Rail:
             source=root.text or "",
             output_schema=output_schema.transpile(),
         )
-        return prompt
+        # return prompt
 
 
 def generate_xml_code(
