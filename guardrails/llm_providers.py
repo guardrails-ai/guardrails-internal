@@ -115,15 +115,9 @@ class OpenAICallable(PromptCallableBase):
         text: str,
         engine: str = "text-davinci-003",
         instructions: Optional[str] = None,
-        openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
         *args,
         **kwargs,
     ) -> LLMResponse:
-        openai_api_key = (
-            openai_api_key
-            if openai_api_key is not None
-            else os.environ.get("OPENAI_API_KEY")
-        )  # FIXME: Consolidate with api_key kwarg
         api_key = kwargs.pop("api_key", os.environ.get("OPENAI_API_KEY"))
         openai_response = openai.Completion.create(
             api_key=api_key,
@@ -148,7 +142,6 @@ class OpenAIChatCallable(PromptCallableBase):
         msg_history: Optional[List[Dict]] = None,
         base_model: Optional[BaseModel] = None,
         function_call: Optional[str] = None,
-        openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
         *args,
         **kwargs,
     ) -> LLMResponse:
@@ -186,14 +179,9 @@ class OpenAIChatCallable(PromptCallableBase):
             fn_kwargs = {}
 
         # Call OpenAI
-        openai_api_key = (
-            openai_api_key
-            if openai_api_key is not None
-            else os.environ.get("OPENAI_API_KEY")
-        )  # FIXME: Consolidate with api_key kwarg
         api_key = kwargs.pop("api_key", os.environ.get("OPENAI_API_KEY"))
         openai_response = openai.ChatCompletion.create(
-            api_key,  # =openai_api_key,
+            api_key,
             model=model,
             messages=chat_prompt(
                 prompt=text, instructions=instructions, msg_history=msg_history
@@ -301,21 +289,15 @@ class ArbitraryCallable(PromptCallableBase):
 
 def get_llm_ask(
     llm_api: Callable,
-    openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
     *args,
     **kwargs,
 ) -> PromptCallableBase:
-    openai_api_key = (
-        openai_api_key
-        if openai_api_key is not None
-        else os.environ.get("OPENAI_API_KEY")
-    )  # FIXME: Consolidate with api_key kwarg
     if "temperature" not in kwargs:
         kwargs.update({"temperature": 0})
     if llm_api == openai.Completion.create:
-        return OpenAICallable(*args, openai_api_key=openai_api_key, **kwargs)
+        return OpenAICallable(*args, **kwargs)
     elif llm_api == openai.ChatCompletion.create:
-        return OpenAIChatCallable(*args, openai_api_key=openai_api_key, **kwargs)
+        return OpenAIChatCallable(*args, **kwargs)
     elif MANIFEST and isinstance(llm_api, manifest.Manifest):
         return ManifestCallable(*args, client=llm_api, **kwargs)
     elif (
@@ -379,15 +361,9 @@ class AsyncOpenAICallable(AsyncPromptCallableBase):
         text: str,
         engine: str = "text-davinci-003",
         instructions: Optional[str] = None,
-        openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
         *args,
         **kwargs,
     ):
-        openai_api_key = (
-            openai_api_key
-            if openai_api_key is not None
-            else os.environ.get("OPENAI_API_KEY")
-        )  # FIXME: Consolidate with api_key kwarg
         api_key = kwargs.pop("api_key", os.environ.get("OPENAI_API_KEY"))
         openai_response = await openai.Completion.acreate(
             api_key=api_key,
@@ -412,7 +388,6 @@ class AsyncOpenAIChatCallable(AsyncPromptCallableBase):
         msg_history: Optional[List[Dict]] = None,
         base_model: Optional[BaseModel] = None,
         function_call: Optional[str] = None,
-        openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
         *args,
         **kwargs,
     ) -> LLMResponse:
@@ -450,11 +425,6 @@ class AsyncOpenAIChatCallable(AsyncPromptCallableBase):
             fn_kwargs = {}
 
         # Call OpenAI
-        openai_api_key = (
-            openai_api_key
-            if openai_api_key is not None
-            else os.environ.get("OPENAI_API_KEY")
-        )  # FIXME: Consolidate with api_key kwarg
         api_key = kwargs.pop("api_key", os.environ.get("OPENAI_API_KEY"))
         openai_response = await openai.ChatCompletion.acreate(
             api_key=api_key,
@@ -541,19 +511,13 @@ class AsyncArbitraryCallable(AsyncPromptCallableBase):
 
 def get_async_llm_ask(
     llm_api: Callable[[Any], Awaitable[Any]],
-    openai_api_key: Optional[str] = None,  # FIXME: Consolidate with api_key kwarg
     *args,
     **kwargs,
 ) -> AsyncPromptCallableBase:
-    openai_api_key = (
-        openai_api_key
-        if openai_api_key is not None
-        else os.environ.get("OPENAI_API_KEY")
-    )  # FIXME: Consolidate with api_key kwarg
     if llm_api == openai.Completion.acreate:
-        return AsyncOpenAICallable(*args, openai_api_key=openai_api_key, **kwargs)
+        return AsyncOpenAICallable(*args, **kwargs)
     elif llm_api == openai.ChatCompletion.acreate:
-        return AsyncOpenAIChatCallable(*args, openai_api_key=openai_api_key, **kwargs)
+        return AsyncOpenAIChatCallable(*args, **kwargs)
     elif MANIFEST and isinstance(llm_api, manifest.Manifest):
         return AsyncManifestCallable(*args, client=llm_api, **kwargs)
 

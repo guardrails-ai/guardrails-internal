@@ -73,7 +73,7 @@ class Guard:
         num_reasks: Optional[int] = None,
         base_model: Optional[Type[BaseModel]] = None,
         name: Optional[str] = None,  # TODO: Make name mandatory on next major version
-        openai_api_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None, # TODO: Turn this into an auth object to support multiple LLM auth keys at once
         description: Optional[str] = None,
     ):
         """Initialize the Guard."""
@@ -438,13 +438,16 @@ class Guard:
                     "Alternatively, you can provide a prompt in the Schema constructor."
                 )
 
+        if 'api_key' not in kwargs:
+            kwargs['api_key'] = self.openai_api_key
+
         with start_action(action_type="guard_call", prompt_params=prompt_params):
             runner = Runner(
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
                 api=get_llm_ask(
-                    llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+                    llm_api, *args, **kwargs
                 ),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
@@ -499,13 +502,17 @@ class Guard:
                     "You must provide a prompt if msg_history is empty. "
                     "Alternatively, you can provide a prompt in the RAIL spec."
                 )
+            
+        if 'api_key' not in kwargs:
+            kwargs['api_key'] = self.openai_api_key
+
         with start_action(action_type="guard_call", prompt_params=prompt_params):
             runner = AsyncRunner(
                 instructions=instructions_obj,
                 prompt=prompt_obj,
                 msg_history=msg_history_obj,
                 api=get_async_llm_ask(
-                    llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+                    llm_api, *args, **kwargs
                 ),
                 input_schema=self.input_schema,
                 output_schema=self.output_schema,
@@ -666,8 +673,11 @@ class Guard:
         Returns:
             The validated response.
         """
+        if 'api_key' not in kwargs:
+            kwargs['api_key'] = self.openai_api_key
+
         api = (
-            get_llm_ask(llm_api, openai_api_key=self.openai_api_key, *args, **kwargs)
+            get_llm_ask(llm_api, *args, **kwargs)
             if llm_api
             else None
         )
@@ -712,9 +722,11 @@ class Guard:
         Returns:
             The validated response.
         """
+        if 'api_key' not in kwargs:
+            kwargs['api_key'] = self.openai_api_key
         api = (
             get_async_llm_ask(
-                llm_api, openai_api_key=self.openai_api_key, *args, **kwargs
+                llm_api, *args, **kwargs
             )
             if llm_api
             else None
