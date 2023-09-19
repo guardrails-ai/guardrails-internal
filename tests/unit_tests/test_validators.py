@@ -1,15 +1,36 @@
-import pytest
+# noqa:W291
+import os
+from typing import Any, Dict
 
+import openai
+import pytest
+from pydantic import BaseModel, Field
+
+from guardrails import Guard
+from guardrails.datatypes import DataType
+from guardrails.schema import StringSchema
+from guardrails.utils.reask_utils import FieldReAsk
 from guardrails.validators import (
     BugFreeSQL,
-    EventDetail,
+    ExtractedSummarySentencesMatch,
+    ExtractiveSummary,
+    FailResult,
     Filter,
+    PassResult,
+    ProvenanceV1,
     Refrain,
     SimilarToDocument,
     SqlColumnPresence,
+    TwoWords,
+    ValidationResult,
+    ValidLength,
     check_refrain_in_dict,
     filter_in_dict,
+    register_validator,
 )
+
+from .mock_embeddings import mock_create_embedding
+from .mock_provenance_v1 import mock_chat_completion, mock_chromadb_query_function
 
 
 @pytest.mark.parametrize(
@@ -61,8 +82,7 @@ def test_similar_to_document_validator():
     )
     summary = "All legislative powers are held by a Congress"
     " consisting of two chambers, the Senate and the House of Representatives."
-    schema = {"key": summary}
-    assert val.validate("key", summary, schema) == schema
+    assert isinstance(val.validate(summary, {}), PassResult)
 
 
 class TestBugFreeSQLValidator:
@@ -74,13 +94,12 @@ class TestBugFreeSQLValidator:
             conn="sqlite://",
         )
         bad_query = "select name, fro employees"
-        with pytest.raises(EventDetail) as context:
-            val.validate("sql-query", bad_query, {})
-        assert context.type is EventDetail
-        assert context.value.error_message != ""
+        result = val.validate(bad_query, {})
+        assert isinstance(result, FailResult)
+        assert result.error_message != ""
 
         good_query = "select name from employees;"
-        val.validate("sql-query", good_query, {})
+        assert isinstance(val.validate(good_query, {}), PassResult)
 
     def test_long_sql_schema_no_exception(self):
         val = BugFreeSQL(
@@ -92,22 +111,318 @@ class TestBugFreeSQLValidator:
     def test_bug_free_sql_simple(self):
         val = BugFreeSQL()
         bad_query = "select name, fro employees"
-        with pytest.raises(EventDetail) as context:
-            val.validate("sql-query", bad_query, {})
-        assert context.type is EventDetail
-        assert context.value.error_message != ""
+
+        result = val.validate(bad_query, {})
+        assert isinstance(result, FailResult)
+        assert result.error_message != ""
 
         good_query = "select name from employees;"
-        val.validate("sql-query", good_query, {})
+        assert isinstance(val.validate(good_query, {}), PassResult)
 
     def test_sql_column_presense(self):
         sql = "select name, age from employees;"
         columns = ["name", "address"]
         val = SqlColumnPresence(cols=columns)
-        with pytest.raises(EventDetail) as context:
-            val.validate("sql-query", sql, {})
-        assert context.type is EventDetail
-        assert context.value.error_message in (
+
+        result = val.validate(sql, {})
+        assert isinstance(result, FailResult)
+        assert result.error_message in (
             "Columns [age] not in [name, address]",
             "Columns [age] not in [address, name]",
         )
+
+
+def test_summary_validators(mocker):
+    pytest.importorskip("nltk", reason="nltk is not installed")
+    pytest.importorskip("thefuzz", reason="thefuzz is not installed")
+
+    mocker.patch("openai.Embedding.create", new=mock_create_embedding)
+    mocker.patch("guardrails.embedding.OpenAIEmbedding.output_dim", new=2)
+
+    summary = "It was a nice day. I went to the park. I saw a dog."
+    metadata = {
+        "filepaths": [
+            "./tests/unit_tests/test_assets/article1.txt",
+            "./tests/unit_tests/test_assets/article2.txt",
+        ]
+    }
+
+    val = ExtractedSummarySentencesMatch(threshold=0.1)
+    result = val.validate(summary, metadata)
+    assert isinstance(result, PassResult)
+    assert "citations" in result.metadata
+    assert "summary_with_citations" in result.metadata
+    assert result.metadata["citations"] == {1: 1, 2: 1, 3: 1}
+    assert (
+        result.metadata["summary_with_citations"]
+        == """It was a nice day. [1] I went to the park. [1] I saw a dog. [1]
+
+[1] ./tests/unit_tests/test_assets/article1.txt
+[2] ./tests/unit_tests/test_assets/article2.txt"""
+    )
+
+    val = ExtractiveSummary(
+        threshold=30,
+    )
+    result = val.validate(summary, metadata)
+    assert isinstance(result, PassResult)
+    assert "citations" in result.metadata
+    assert "summary_with_citations" in result.metadata
+    assert result.metadata["citations"] == {1: 1, 2: 2, 3: 1}
+    assert (
+        result.metadata["summary_with_citations"]
+        == """It was a nice day. [1] I went to the park. [2] I saw a dog. [1]
+
+[1] ./tests/unit_tests/test_assets/article1.txt
+[2] ./tests/unit_tests/test_assets/article2.txt"""
+    )
+
+
+@register_validator("mycustomhellovalidator", data_type="string")
+def hello_validator(value: Any, metadata: Dict[str, Any]) -> ValidationResult:
+    if "hello" in value.lower():
+        return FailResult(
+            error_message="Hello is too basic, try something more creative.",
+            fix_value="hullo",
+        )
+    return PassResult()
+
+
+def test_validator_as_tuple():
+    # (Callable, on_fail) tuple fix
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=[(hello_validator, "fix")])
+
+    guard = Guard.from_pydantic(MyModel)
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hullo"}
+
+    # (string, on_fail) tuple fix
+
+    class MyModel(BaseModel):
+        a_field: str = Field(
+            ..., validators=[("two_words", "reask"), ("mycustomhellovalidator", "fix")]
+        )
+
+    guard = Guard.from_pydantic(MyModel)
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hullo"}
+
+    # (Validator, on_fail) tuple fix
+
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=[(TwoWords(), "fix")])
+
+    guard = Guard.from_pydantic(MyModel)
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hello there"}
+
+    # (Validator, on_fail) tuple reask
+
+    hullo_reask = FieldReAsk(
+        incorrect_value="hello there yo",
+        fail_results=[
+            FailResult(
+                error_message="Hello is too basic, try something more creative.",
+                fix_value="hullo",
+            )
+        ],
+        path=["a_field"],
+    )
+
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=[(hello_validator, "reask")])
+
+    guard = Guard.from_pydantic(MyModel)
+
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hullo"}
+    assert (
+        guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
+        == hullo_reask
+    )
+
+    hello_reask = FieldReAsk(
+        incorrect_value="hello there yo",
+        fail_results=[
+            FailResult(
+                error_message="must be exactly two words",
+                fix_value="hello there",
+            )
+        ],
+        path=["a_field"],
+    )
+
+    # (string, on_fail) tuple reask
+
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=[("two-words", "reask")])
+
+    guard = Guard.from_pydantic(MyModel)
+
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hello there"}
+    assert (
+        guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
+        == hello_reask
+    )
+
+    # (Validator, on_fail) tuple reask
+
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=[(TwoWords(), "reask")])
+
+    guard = Guard.from_pydantic(MyModel)
+
+    output = guard.parse(
+        '{"a_field": "hello there yo"}',
+        num_reasks=0,
+    )
+
+    assert output == {"a_field": "hello there"}
+    assert (
+        guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
+        == hello_reask
+    )
+
+    # Fail on string
+
+    class MyModel(BaseModel):
+        a_field: str = Field(..., validators=["two-words"])
+
+    with pytest.raises(ValueError):
+        Guard.from_pydantic(MyModel)
+
+
+def test_custom_func_validator():
+    rail_str = """
+    <rail version="0.1">
+    <output>
+        <string name="greeting"
+                format="mycustomhellovalidator"
+                on-fail-mycustomhellovalidator="fix"/>
+    </output>
+    </rail>
+    """
+
+    guard = Guard.from_rail_string(rail_str)
+
+    output = guard.parse(
+        '{"greeting": "hello"}',
+        num_reasks=0,
+    )
+    assert output == {"greeting": "hullo"}
+
+    guard_history = guard.guard_state.all_histories[0].history
+    assert len(guard_history) == 1
+    validator_log = (
+        guard_history[0].field_validation_logs.children["greeting"].validator_logs[0]
+    )
+    assert validator_log.validator_name == "mycustomhellovalidator"
+    assert validator_log.validation_result == FailResult(
+        error_message="Hello is too basic, try something more creative.",
+        fix_value="hullo",
+    )
+
+
+def test_bad_validator():
+    with pytest.raises(ValueError):
+
+        @register_validator("mycustombadvalidator", data_type="string")
+        def validate(value: Any) -> ValidationResult:
+            pass
+
+
+def test_provenance_v1(mocker):
+    """Test initialisation of ProvenanceV1."""
+
+    mocker.patch("openai.ChatCompletion.create", new=mock_chat_completion)
+    API_KEY = "<YOUR_KEY>"
+    LLM_RESPONSE = "This is a sentence."
+
+    # Initialise Guard from string
+    string_guard = Guard.from_string(
+        validators=[
+            ProvenanceV1(
+                validation_method="full",
+                llm_callable="gpt-3.5-turbo",
+                top_k=3,
+                max_tokens=100,
+                on_fail="fix",
+            )
+        ],
+        description="testmeout",
+    )
+
+    output_schema: StringSchema = string_guard.rail.output_schema
+    data_type: DataType = getattr(output_schema._schema, "string")
+    validators = data_type.format_attr.validators
+    prov_validator: ProvenanceV1 = validators[0]
+
+    # Check types remain intact
+    assert isinstance(prov_validator._validation_method, str)
+    assert isinstance(prov_validator._top_k, int)
+    assert isinstance(prov_validator._max_tokens, int)
+
+    # Test guard.parse() with 3 different ways of setting the OpenAI API key API key
+    # 1. Setting the API key directly
+    openai.api_key = API_KEY
+
+    output = string_guard.parse(
+        llm_output=LLM_RESPONSE,
+        metadata={"query_function": mock_chromadb_query_function},
+    )
+    assert output == LLM_RESPONSE
+
+    # 2. Setting the environment variable
+    os.environ["OPENAI_API_KEY"] = API_KEY
+    output = string_guard.parse(
+        llm_output=LLM_RESPONSE,
+        metadata={"query_function": mock_chromadb_query_function},
+    )
+    assert output == LLM_RESPONSE
+
+    # 3. Passing the API key as an argument
+    output = string_guard.parse(
+        llm_output=LLM_RESPONSE,
+        metadata={"query_function": mock_chromadb_query_function},
+        api_key=API_KEY,
+        api_base="https://api.openai.com",
+    )
+    assert output == LLM_RESPONSE
+
+
+@pytest.mark.parametrize(
+    "min,max,expected_xml",
+    [
+        (0, 12, "length: 0 12"),
+        ("0", "12", "length: 0 12"),
+        (None, 12, "length: None 12"),
+        (1, None, "length: 1 None"),
+    ],
+)
+def test_to_xml_attrib(min, max, expected_xml):
+    validator = ValidLength(min=min, max=max)
+    xml_validator = validator.to_xml_attrib()
+
+    assert xml_validator == expected_xml

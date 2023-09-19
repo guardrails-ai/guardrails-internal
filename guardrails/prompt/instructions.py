@@ -1,5 +1,6 @@
 """Instructions to the LLM, to be passed in the prompt."""
-from string import Formatter
+from string import Formatter, Template
+from warnings import warn
 
 from .base_prompt import BasePrompt
 
@@ -25,12 +26,29 @@ class Instructions(BasePrompt):
     def format(self, **kwargs):
         """Format the prompt using the given keyword arguments."""
         # Only use the keyword arguments that are present in the prompt.
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.variable_names}
+        
+        # FIXME: Is the super format call still necesary?
+        # filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.variable_names}
+
+        # # Return another instance of the class with the formatted prompt.
+        # # If the convention of double escaping prompt params changes, send filtered_kwarfs to super.format instead
+        # formatted_source = super().format()
+        # return Instructions(formatted_source.format(**filtered_kwargs), format_instructions_start=self.format_instructions_start)
+
+        vars = [x[1] for x in Formatter().parse(self.source) if x[1] is not None]
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in vars}
+        if len(filtered_kwargs) == 0:
+            warn(
+                "Instructions do not have any variables, "
+                "if you are migrating follow the new variable convention "
+                "documented here: https://docs.getguardrails.ai/0-2-migration/"
+            )
 
         # Return another instance of the class with the formatted prompt.
-        # If the convention of double escaping prompt params changes, send filtered_kwarfs to super.format instead
-        formatted_source = super().format()
-        return Instructions(formatted_source.format(**filtered_kwargs), format_instructions_start=self.format_instructions_start)
+        formatted_instructions = Template(self.source).safe_substitute(
+            **filtered_kwargs
+        )
+        return Instructions(formatted_instructions)
 
     def _to_request(self) -> str:
         return self.source

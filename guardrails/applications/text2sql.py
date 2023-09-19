@@ -8,31 +8,30 @@ import openai
 from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.embedding import EmbeddingBase, OpenAIEmbedding
 from guardrails.guard import Guard
-from guardrails.llm_providers import PromptCallable
 from guardrails.utils.sql_utils import create_sql_driver
 from guardrails.vectordb import Faiss, VectorDBBase
 
 REASK_PROMPT = """
 You are a data scientist whose job is to write SQL queries.
 
-@complete_json_suffix_v2
+${gr.complete_json_suffix_v2}
 
 Here's schema about the database that you can use to generate the SQL query.
 Try to avoid using joins if the data can be retrieved from the same table.
 
-{{db_info}}
+${db_info}
 
 I will give you a list of examples.
 
-{{examples}}
+${examples}
 
 I want to create a query for the following instruction:
 
-{{nl_instruction}}
+${nl_instruction}
 
 For this instruction, I was given the following JSON, which has some incorrect values.
 
-{previous_response}
+${previous_response}
 
 Help me correct the incorrect values based on the given error messages.
 """
@@ -71,7 +70,7 @@ class Text2Sql:
         rail_params: Optional[Dict] = None,
         example_formatter: Optional[Callable] = example_formatter,
         reask_prompt: Optional[str] = REASK_PROMPT,
-        llm_api: Optional[PromptCallable] = openai.Completion.create,
+        llm_api: Optional[Callable] = openai.Completion.create,
         llm_api_kwargs: Optional[Dict] = None,
         num_relevant_examples: int = 2,
     ):
