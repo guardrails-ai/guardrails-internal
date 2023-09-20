@@ -33,9 +33,6 @@ from tests.unit_tests.mocks import MockDocumentStore
 from .mock_embeddings import mock_create_embedding
 from .mock_provenance_v1 import mock_chat_completion, mock_chromadb_query_function
 
-from .mock_embeddings import mock_create_embedding
-from .mock_provenance_v1 import mock_chat_completion, mock_chromadb_query_function
-
 
 @pytest.mark.parametrize(
     "input_dict, expected",
