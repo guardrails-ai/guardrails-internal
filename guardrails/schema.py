@@ -858,6 +858,18 @@ class StringSchema(Schema):
         else:
             self._reask_instructions_template = None
 
+        # Setup reask templates
+        if reask_prompt_template is not None:
+            self._reask_prompt_template = Prompt(reask_prompt_template)
+        else:
+            self._reask_prompt_template = None
+        if reask_instructions_template is not None:
+            self._reask_instructions_template = Instructions(
+                reask_instructions_template
+            )
+        else:
+            self._reask_instructions_template = None
+
     def setup_schema(self, root: ET._Element) -> None:
         if len(root) != 0:
             raise ValueError("String output schemas must not have children.")

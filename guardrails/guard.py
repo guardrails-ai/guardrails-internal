@@ -327,6 +327,71 @@ class Guard:
     ) -> Tuple[str, Dict]:
         ...
 
+    @classmethod
+    def from_string(
+        cls,
+        validators: List[Validator],
+        description: Optional[str] = None,
+        prompt: Optional[str] = None,
+        instructions: Optional[str] = None,
+        reask_prompt: Optional[str] = None,
+        reask_instructions: Optional[str] = None,
+        num_reasks: Optional[int] = None,
+    ) -> "Guard":
+        """Create a Guard instance for a string response with prompt,
+        instructions, and validations.
+
+        Parameters: Arguments
+            validators: (List[Validator]): The list of validators to apply to the string output.
+            description (str, optional): A description for the string to be generated. Defaults to None.
+            prompt (str, optional): The prompt used to generate the string. Defaults to None.
+            instructions (str, optional): Instructions for chat models. Defaults to None.
+            reask_prompt (str, optional): An alternative prompt to use during reasks. Defaults to None.
+            reask_instructions (str, optional): Alternative instructions to use during reasks. Defaults to None.
+            num_reasks (int, optional): The max times to re-ask the LLM for invalid output.
+        """  # noqa
+        rail = Rail.from_string_validators(
+            validators=validators,
+            description=description,
+            prompt=prompt,
+            instructions=instructions,
+            reask_prompt=reask_prompt,
+            reask_instructions=reask_instructions,
+        )
+        return cls(rail, num_reasks=num_reasks)
+
+    @overload
+    def __call__(
+        self,
+        llm_api: Callable[[Any], Awaitable[Any]],
+        prompt_params: Optional[Dict] = None,
+        num_reasks: Optional[int] = None,
+        prompt: Optional[str] = None,
+        instructions: Optional[str] = None,
+        msg_history: Optional[List[Dict]] = None,
+        metadata: Optional[Dict] = None,
+        full_schema_reask: Optional[bool] = None,
+        *args,
+        **kwargs,
+    ) -> Awaitable[Tuple[str, Dict]]:
+        ...
+
+    @overload
+    def __call__(
+        self,
+        llm_api: Callable,
+        prompt_params: Optional[Dict] = None,
+        num_reasks: Optional[int] = None,
+        prompt: Optional[str] = None,
+        instructions: Optional[str] = None,
+        msg_history: Optional[List[Dict]] = None,
+        metadata: Optional[Dict] = None,
+        full_schema_reask: Optional[bool] = None,
+        *args,
+        **kwargs,
+    ) -> Tuple[str, Dict]:
+        ...
+
     def __call__(
         self,
         llm_api: Union[Callable, Callable[[Any], Awaitable[Any]]],
@@ -618,8 +683,9 @@ class Guard:
             return self.validate(
                 llm_output=llm_output,
                 llm_api=llm_api,
-                num_reasks=num_reasks,
+                num_reasks=self.num_reasks,
                 prompt_params=prompt_params,
+                full_schema_reask=full_schema_reask,
                 *args,
                 **kwargs,
             )

@@ -1562,6 +1562,11 @@ class SaliencyCheck(Validator):
                 "SaliencyCheck validator does not support async LLM callables."
             )
 
+        if llm_callable is not None and inspect.iscoroutinefunction(llm_callable):
+            raise ValueError(
+                "SaliencyCheck validator does not support async LLM callables."
+            )
+
         self.llm_callable = (
             llm_callable if llm_callable else openai.ChatCompletion.create
         )
