@@ -24,3 +24,4 @@ scratch/
 test.db
 test.index
 htmlcov
+.python-version

@@ -40,6 +40,7 @@ from guardrails.rail import Rail
 from guardrails.run import AsyncRunner, Runner
 from guardrails.schema import Schema
 from guardrails.utils.logs_utils import GuardHistory, GuardLogs, GuardState
+from guardrails.utils.parsing_utils import get_template_variables
 from guardrails.utils.reask_utils import FieldReAsk, sub_reasks_with_fixed_values
 from guardrails.validators import Validator
 
@@ -158,7 +159,7 @@ class Guard:
             reask_prompt = Prompt(reask_prompt)
 
         # Check that the reask prompt has the correct variables
-        variables = Template(reask_prompt.source).get_identifiers()
+        variables = get_template_variables(reask_prompt.source)
         variable_set = set(variables)
         assert variable_set.__contains__("previous_response")
         assert variable_set.__contains__("output_schema")

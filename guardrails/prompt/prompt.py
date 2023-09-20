@@ -2,6 +2,8 @@
 import warnings
 from string import Template
 
+from guardrails.utils.parsing_utils import get_template_variables
+
 from .base_prompt import BasePrompt
 
 
@@ -33,7 +35,7 @@ class Prompt(BasePrompt):
         # format_instructions_start=self.format_instructions_start
         # )
 
-        vars = Template(self.source).get_identifiers()
+        vars = get_template_variables(self.source)
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in vars}
         if len(filtered_kwargs) == 0:
             warnings.warn(
