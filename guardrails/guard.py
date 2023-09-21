@@ -230,7 +230,7 @@ class Guard(Generic[T]):
             reask_instructions=reask_instructions,
         )
         return cls[str](rail, num_reasks=num_reasks)
-    
+
     @overload
     def __call__(
         self,
@@ -439,7 +439,9 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history, error_message = await runner.async_run(prompt_params=prompt_params)
+            guard_history, error_message = await runner.async_run(
+                prompt_params=prompt_params
+            )
             return ValidationOutcome[T].from_guard_history(guard_history, error_message)
 
     def __repr__(self):
@@ -447,7 +449,7 @@ class Guard(Generic[T]):
 
     def __rich_repr__(self):
         yield "RAIL", self.rail
-    
+
     @overload
     def parse(
         self,
@@ -489,6 +491,7 @@ class Guard(Generic[T]):
         **kwargs,
     ) -> ValidationOutcome[T]:
         ...
+
     def parse(
         self,
         llm_output: str,
@@ -599,7 +602,9 @@ class Guard(Generic[T]):
             guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
                 guard_history.validated_output
             )
-            validation_outcome = ValidationOutcome[T].from_guard_history(guard_history, error_message)
+            validation_outcome = ValidationOutcome[T].from_guard_history(
+                guard_history, error_message
+            )
             return validation_outcome
 
     async def _async_parse(
@@ -641,9 +646,10 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history, error_message = await runner.async_run(prompt_params=prompt_params)
+            guard_history, error_message = await runner.async_run(
+                prompt_params=prompt_params
+            )
             guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
                 guard_history.validated_output
             )
             return ValidationOutcome[T].from_guard_history(guard_history, error_message)
-    
