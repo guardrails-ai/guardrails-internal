@@ -180,7 +180,7 @@ class Text2Sql:
             similar_examples_prompt = ""
 
         try:
-            return self.guard(
+            output = self.guard(
                 self.llm_api,
                 prompt_params={
                     "nl_instruction": text,
