@@ -188,7 +188,7 @@ class Text2Sql:
                     "db_info": str(self.sql_schema),
                 },
                 **self.llm_api_kwargs,
-            )[1]["generated_sql"]
+            ).validated_output["generated_sql"]
         except TypeError:
             output = None
 

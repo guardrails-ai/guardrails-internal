@@ -380,8 +380,8 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history = runner(prompt_params=prompt_params)
-            return ValidationOutcome[T].from_guard_history(guard_history)
+            guard_history, error_message = runner(prompt_params=prompt_params)
+            return ValidationOutcome[T].from_guard_history(guard_history, error_message)
 
     async def _call_async(
         self,
@@ -439,8 +439,10 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history = await runner.async_run(prompt_params=prompt_params)
-            return ValidationOutcome[T].from_guard_history(guard_history)
+            guard_history, error_message = await runner.async_run(
+                prompt_params=prompt_params
+            )
+            return ValidationOutcome[T].from_guard_history(guard_history, error_message)
 
     def __repr__(self):
         return f"Guard(RAIL={self.rail})"
@@ -596,11 +598,13 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history = runner(prompt_params=prompt_params)
+            guard_history, error_message = runner(prompt_params=prompt_params)
             guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
                 guard_history.validated_output
             )
-            validation_outcome = ValidationOutcome[T].from_guard_history(guard_history)
+            validation_outcome = ValidationOutcome[T].from_guard_history(
+                guard_history, error_message
+            )
             return validation_outcome
 
     async def _async_parse(
@@ -642,8 +646,10 @@ class Guard(Generic[T]):
                 guard_state=self.guard_state,
                 full_schema_reask=full_schema_reask,
             )
-            guard_history = await runner.async_run(prompt_params=prompt_params)
+            guard_history, error_message = await runner.async_run(
+                prompt_params=prompt_params
+            )
             guard_history.history[-1].validated_output = sub_reasks_with_fixed_values(
                 guard_history.validated_output
             )
-            return ValidationOutcome[T].from_guard_history(guard_history)
+            return ValidationOutcome[T].from_guard_history(guard_history, error_message)

@@ -26,13 +26,22 @@ class ValidationOutcome(Generic[T], ArbitraryModel):
         " the LLM output passed validation."
         "  If this is False, the validated_output may be invalid."
     )
+    error: Optional[str] = Field()
 
     @classmethod
-    def from_guard_history(cls, guard_history: GuardHistory):
+    def from_guard_history(
+        cls, guard_history: GuardHistory, error_message: Optional[str]
+    ):
         raw_output = guard_history.output
         validated_output = guard_history.validated_output
         any_validations_failed = len(guard_history.failed_validations) > 0
-        if isinstance(validated_output, ReAsk):
+        if error_message:
+            return cls[T](
+                raw_llm_output=raw_output or "",
+                validation_passed=False,
+                error=error_message,
+            )
+        elif isinstance(validated_output, ReAsk):
             return cls[T](
                 raw_llm_output=raw_output,
                 reask=validated_output,
@@ -51,6 +60,7 @@ class ValidationOutcome(Generic[T], ArbitraryModel):
             self.validated_output,
             self.reask,
             self.validation_passed,
+            self.error,
         )
         return iter(as_tuple)
 
