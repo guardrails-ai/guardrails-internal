@@ -1,15 +1,17 @@
 import datetime
 import logging
+from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Dict, Generator
+from typing import TYPE_CHECKING, Any, Dict, Generator, Iterable
 from typing import List as TypedList
-from typing import Tuple, Type, Union
+from typing import Optional, Tuple, Type, TypeVar, Union
 
 from lxml import etree as ET
-from pydantic import BaseModel
+from typing_extensions import Self
 
 from guardrails.document_store import DocumentStoreBase
-from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
+from guardrails.utils.casting_utils import to_float, to_int, to_string
+from guardrails.validators import Validator
 
 if TYPE_CHECKING:
     from guardrails.schema import FormatAttr
@@ -17,12 +19,35 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class FieldValidation:
+    key: Any
+    value: Any
+    validators: TypedList[Validator]
+    children: TypedList["FieldValidation"]
+
+
+def verify_metadata_requirements(
+    metadata: dict, datatypes: Iterable["DataType"]
+) -> TypedList[str]:
+    missing_keys = set()
+    for datatype in datatypes:
+        for validator in datatype.validators:
+            for requirement in validator.required_metadata_keys:
+                if requirement not in metadata:
+                    missing_keys.add(requirement)
+        nested_missing_keys = verify_metadata_requirements(
+            metadata, vars(datatype.children).values()
+        )
+        missing_keys.update(nested_missing_keys)
+    return list(missing_keys)
+
+
 class DataType:
+    rail_alias: str
+
     def __init__(
-        self,
-        children: Dict[str, Any],
-        format_attr: "FormatAttr",
-        element: ET._Element
+        self, children: Dict[str, Any], format_attr: "FormatAttr", element: ET._Element
     ) -> None:
         self._children = children
         self.format_attr = format_attr
@@ -35,12 +60,16 @@ class DataType:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._children})"
 
-    def __iter__(self) -> Generator[Tuple[str, "DataType", ET._Element], None, None]:
+    def __iter__(
+        self,
+    ) -> Generator[Tuple[Optional[str], "DataType", ET._Element], None, None]:
         """Return a tuple of (name, child_data_type, child_element) for each
         child."""
         for el_child in self.element:
             if "name" in el_child.attrib:
-                name: str = el_child.attrib["name"]
+                name = el_child.attrib["name"]
+                if isinstance(name, bytes):
+                    name = name.decode()
                 child_data_type: DataType = self._children[name]
                 yield name, child_data_type, el_child
             else:
@@ -49,7 +78,7 @@ class DataType:
 
     def iter(
         self, element: ET._Element
-    ) -> Generator[Tuple[str, "DataType", ET._Element], None, None]:
+    ) -> Generator[Tuple[Optional[str], "DataType", ET._Element], None, None]:
         """Iterate over the children of an element.
 
         Yields tuples of (name, child_data_type, child_element) for each
@@ -60,11 +89,13 @@ class DataType:
                 assert len(self._children) == 1, "Must have exactly one child."
                 yield None, list(self._children.values())[0], el_child
             else:
-                name: str = el_child.attrib["name"]
+                name = el_child.attrib["name"]
+                if isinstance(name, bytes):
+                    name = name.decode()
                 child_data_type: DataType = self._children[name]
                 yield name, child_data_type, el_child
 
-    def from_str(self, s: str) -> "DataType":
+    def from_str(self, s: str) -> str:
         """Create a DataType from a string.
 
         Note: ScalarTypes like int, float, bool, etc. will override this method.
@@ -72,46 +103,41 @@ class DataType:
         """
         return s
 
-    def _iterate_validators(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
-        for validator in self.validators:
-            validator_class_name = validator.__class__.__name__
-            validator_logs = ValidatorLogs(
-                validator_name=validator_class_name,
-                value_before_validation=value,
-            )
-            validation_logs.validator_logs.append(validator_logs)
-            logger.debug(
-                f"Validating field {key} with validator {validator_class_name}..."
-            )
-            schema = validator.validate_with_correction(key, value, schema)
-            if key in schema:
-                value = schema[key]
-                validator_logs.value_after_validation = schema[key]
-                logger.debug(
-                    f"Validator {validator_class_name} finished, "
-                    f"key {key} has value {schema[key]}."
-                )
-            else:
-                logger.debug(
-                    f"Validator {validator_class_name} finished, "
-                    f"key {key} is not present in schema."
-                )
-        return schema
+    def _constructor_validation(
+        self,
+        key: str,
+        value: Any,
+    ) -> FieldValidation:
+        """Creates a "FieldValidation" object for ValidatorService to run over,
+        which specifies the key, value, and validators for a given field.
 
-    def validate(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
-        """Validate a value."""
+        Its children should be populated by its nested fields'
+        FieldValidations.
+        """
+        return FieldValidation(
+            key=key, value=value, validators=self.validators, children=[]
+        )
+
+    def collect_validation(
+        self,
+        key: str,
+        value: Any,
+        schema: Dict,
+    ) -> FieldValidation:
+        """Gather validators on a value."""
         value = self.from_str(value)
-        return self._iterate_validators(validation_logs, key, value, schema)
+        return self._constructor_validation(key, value)
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         raise NotImplementedError("Abstract method.")
 
     @classmethod
-    def from_xml(cls, element: ET._Element, document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> Self:
         from guardrails.schema import FormatAttr
 
         # TODO: don't want to pass strict through to DataType,
@@ -154,7 +180,7 @@ class DataType:
                     validator_tag = attr_key
                     validator_on_fail = {
                         "validatorTag": validator_tag,
-                        "method": on_fail_method
+                        "method": on_fail_method,
                     }
                     on_fails.append(validator_on_fail)
             element_model = self.element.get("model")
@@ -197,12 +223,15 @@ class DataType:
         return datatype
 
 
-registry: Dict[str, DataType] = {}
+registry: Dict[str, Type[DataType]] = {}
+
+
+T = TypeVar("T", bound=Type[DataType])
 
 
 # Create a decorator to register a type
 def register_type(name: str):
-    def decorator(cls: type):
+    def decorator(cls: T) -> T:
         registry[name] = cls
         cls.rail_alias = name
         return cls
@@ -211,7 +240,7 @@ def register_type(name: str):
 
 
 class ScalarType(DataType):
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for _ in element:
             raise ValueError("ScalarType data type must not have any children.")
 
@@ -224,40 +253,34 @@ class NonScalarType(DataType):
 class String(ScalarType):
     """Element tag: `<string>`"""
 
-    def from_str(self, s: str) -> "String":
+    def from_str(self, s: str) -> Optional[str]:
         """Create a String from a string."""
-        return s
+        return to_string(s)
 
 
 @register_type("integer")
 class Integer(ScalarType):
     """Element tag: `<integer>`"""
 
-    def from_str(self, s: str) -> "Integer":
+    def from_str(self, s: str) -> Optional[int]:
         """Create an Integer from a string."""
-        if s is None:
-            return None
-
-        return int(s)
+        return to_int(s)
 
 
 @register_type("float")
 class Float(ScalarType):
     """Element tag: `<float>`"""
 
-    def from_str(self, s: str) -> "Float":
+    def from_str(self, s: str) -> Optional[float]:
         """Create a Float from a string."""
-        if s is None:
-            return None
-
-        return float(s)
+        return to_float(s)
 
 
 @register_type("bool")
 class Boolean(ScalarType):
     """Element tag: `<bool>`"""
 
-    def from_str(self, s: Union[str, bool]) -> "Boolean":
+    def from_str(self, s: Union[str, bool]) -> Optional[bool]:
         """Create a Boolean from a string."""
         if s is None:
             return None
@@ -287,7 +310,7 @@ class Date(ScalarType):
         self.date_format = "%Y-%m-%d"
         super().__init__(children, format_attr, element)
 
-    def from_str(self, s: str) -> "Date":
+    def from_str(self, s: str) -> Optional[datetime.date]:
         """Create a Date from a string."""
         if s is None:
             return None
@@ -295,7 +318,12 @@ class Date(ScalarType):
         return datetime.datetime.strptime(s, self.date_format).date()
 
     @classmethod
-    def from_xml(cls, element: ET._Element,  document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> "Date":
         datatype = super().from_xml(element, document_store, strict)
 
         if "date-format" in element.attrib or "date_format" in element.attrib:
@@ -318,7 +346,7 @@ class Time(ScalarType):
         self.time_format = "%H:%M:%S"
         super().__init__(children, format_attr, element)
 
-    def from_str(self, s: str) -> "Time":
+    def from_str(self, s: str) -> Optional[datetime.time]:
         """Create a Time from a string."""
         if s is None:
             return None
@@ -326,11 +354,16 @@ class Time(ScalarType):
         return datetime.datetime.strptime(s, self.time_format).time()
 
     @classmethod
-    def from_xml(cls, element: ET._Element,  document_store: DocumentStoreBase, strict: bool = False) -> "DataType":
+    def from_xml(
+        cls,
+        element: ET._Element,
+        document_store: DocumentStoreBase,
+        strict: bool = False,
+    ) -> "Time":
         datatype = super().from_xml(element, strict)
 
         if "time-format" in element.attrib or "time_format" in element.attrib:
-            datatype.date_format = element.attrib["time-format"]
+            datatype.time_format = element.attrib["time-format"]
 
         return datatype
 
@@ -364,25 +397,27 @@ class Percentage(ScalarType):
 class List(NonScalarType):
     """Element tag: `<list>`"""
 
-    def validate(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
+    def collect_validation(
+        self,
+        key: str,
+        value: Any,
+        schema: Dict,
+    ) -> FieldValidation:
         # Validators in the main list data type are applied to the list overall.
 
-        self._iterate_validators(validation_logs, key, value, schema)
+        validation = self._constructor_validation(key, value)
 
         if len(self._children) == 0:
-            return schema
+            return validation
 
         item_type = list(self._children.values())[0]
 
         # TODO(shreya): Edge case: List of lists -- does this still work?
         for i, item in enumerate(value):
-            child_validation_logs = FieldValidationLogs()
-            validation_logs.children[i] = child_validation_logs
-            value = item_type.validate(child_validation_logs, i, item, value)
+            child_validation = item_type.collect_validation(i, item, value)
+            validation.children.append(child_validation)
 
-        return schema
+        return validation
 
     def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for idx, child in enumerate(element, start=1):
@@ -399,15 +434,18 @@ class List(NonScalarType):
 class Object(NonScalarType):
     """Element tag: `<object>`"""
 
-    def validate(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
+    def collect_validation(
+        self,
+        key: str,
+        value: Any,
+        schema: Dict,
+    ) -> FieldValidation:
         # Validators in the main object data type are applied to the object overall.
 
-        schema = self._iterate_validators(validation_logs, key, value, schema)
+        validation = self._constructor_validation(key, value)
 
         if len(self._children) == 0:
-            return schema
+            return validation
 
         # Types of supported children
         # 1. key_type
@@ -422,20 +460,22 @@ class Object(NonScalarType):
             # child_key is an expected key that the schema defined
             # child_data_type is the data type of the expected key
             child_value = value.get(child_key, None)
-            child_validation_logs = FieldValidationLogs()
-            validation_logs.children[child_key] = child_validation_logs
-            value = child_data_type.validate(
-                child_validation_logs, child_key, child_value, value
+            child_validation = child_data_type.collect_validation(
+                child_key,
+                child_value,
+                value,
             )
+            validation.children.append(child_validation)
 
-        schema[key] = value
+        return validation
 
-        return schema
-
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
+            name = child.attrib["name"]
+            if isinstance(name, bytes):
+                name = name.decode()
+            self._children[name] = child_data_type.from_xml(child, document_store)
 
 
 @register_type("choice")
@@ -446,41 +486,38 @@ class Choice(NonScalarType):
         self, children: Dict[str, Any], format_attr: "FormatAttr", element: ET._Element
     ) -> None:
         super().__init__(children, format_attr, element)
+        # grab `discriminator` attribute
+        self.discriminator_key = element.attrib.get("discriminator", "discriminator")
 
-    def validate(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
-        # Call the validate method of the parent class
-        super().validate(validation_logs, key, value, schema)
-
+    def collect_validation(
+        self,
+        key: str,
+        value: Any,
+        schema: Dict,
+    ) -> FieldValidation:
         # Validate the selected choice
-        selected_key = value
-        selected_value = schema[selected_key]
+        discriminator_value = value[self.discriminator_key]
 
-        self._children[selected_key].validate(
-            validation_logs, selected_key, selected_value, schema
+        validation = self._children[discriminator_value].collect_validation(
+            key,
+            value,
+            schema,
         )
 
-        schema[key] = value
-        return schema
+        return validation
 
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
             assert child_data_type == Case
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
+            name = child.attrib["name"]
+            if isinstance(name, bytes):
+                name = name.decode()
+            self._children[name] = child_data_type.from_xml(child, document_store)
 
     @property
     def validators(self) -> TypedList:
-        from guardrails.validators import Choice as ChoiceValidator
-
-        # Check if the <choice ... /> element has an `on-fail` attribute.
-        # If so, use that as the `on_fail` argument for the PydanticValidator.
-        on_fail = None
-        on_fail_attr_name = "on-fail-choice"
-        if on_fail_attr_name in self.element.attrib:
-            on_fail = self.element.attrib[on_fail_attr_name]
-        return [ChoiceValidator(choices=list(self._children.keys()), on_fail=on_fail)]
+        return []
 
 
 @register_type("case")
@@ -492,147 +529,37 @@ class Case(NonScalarType):
     ) -> None:
         super().__init__(children, format_attr, element)
 
-    def validate(
-        self, validation_logs: FieldValidationLogs, key: str, value: Any, schema: Dict
-    ) -> Dict:
-        child = list(self._children.values())[0]
-
-        child.validate(validation_logs, key, value, schema)
-
-        schema[key] = value
-
-        return schema
-
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
-        assert len(element) == 1, "Case must have exactly one child."
-
-        for child in element:
-            child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
-
-
-@register_type("pydantic")
-class Pydantic(NonScalarType):
-    """Element tag: `<pydantic>`"""
-
-    def __init__(
+    def collect_validation(
         self,
-        model: Type[BaseModel],
-        children: Dict[str, Any],
-        format_attr: "FormatAttr",
-        element: ET._Element,
-    ) -> None:
-        super().__init__(children, format_attr, element)
-        assert (
-            format_attr.empty
-        ), "The <pydantic /> data type does not support the `format` attribute."
-        assert isinstance(model, type) and issubclass(
-            model, BaseModel
-        ), "The `model` argument must be a Pydantic model."
+        key: str,
+        value: Any,
+        schema: Dict,
+    ) -> FieldValidation:
+        # Validate the selected choice
+        validation = self._constructor_validation(key, value)
 
-        self.model = model
+        # Collect validation for all children
+        for child_key, child_data_type in self._children.items():
+            # Value should be a dictionary
+            # child_key is an expected key that the schema defined
+            # child_data_type is the data type of the expected key
+            child_value = value.get(child_key, None)
+            child_validation = child_data_type.collect_validation(
+                child_key,
+                child_value,
+                value,
+            )
+            validation.children.append(child_validation)
 
-    @property
-    def validators(self) -> TypedList:
-        from guardrails.validators import Pydantic as PydanticValidator
+        return validation
 
-        # Check if the <pydantic /> element has an `on-fail` attribute.
-        # If so, use that as the `on_fail` argument for the PydanticValidator.
-        on_fail = None
-        on_fail_attr_name = "on-fail-pydantic"
-        if on_fail_attr_name in self.element.attrib:
-            on_fail = self.element.attrib[on_fail_attr_name]
-        return [PydanticValidator(self.model, on_fail=on_fail)]
-
-    def set_children(self, element: ET._Element,  document_store: DocumentStoreBase):
+    def set_children(self, element: ET._Element, document_store: DocumentStoreBase):
         for child in element:
             child_data_type = registry[child.tag]
-            self._children[child.attrib["name"]] = child_data_type.from_xml(child, document_store)
-
-    @classmethod
-    def from_xml(cls, element: ET._Element, strict: bool = False) -> "DataType":
-        from guardrails.schema import FormatAttr
-        from guardrails.utils.pydantic_utils import pydantic_models
-
-        model_name = element.attrib["model"]
-        model = pydantic_models.get(model_name, None)
-
-        if model is None:
-            raise ValueError(f"Invalid Pydantic model: {model_name}")
-
-        data_type = cls(model, {}, FormatAttr(), element)
-        data_type.set_children(element, document_store)
-        return data_type
-
-    def to_object_element(self) -> ET._Element:
-        """Convert the Pydantic data type to an <object /> element."""
-        from guardrails.utils.pydantic_utils import (
-            PYDANTIC_SCHEMA_TYPE_MAP,
-            get_field_descriptions,
-            pydantic_validators,
-        )
-
-        # Get the following attributes
-        # TODO: add on-fail
-        try:
-            name = self.element.attrib["name"]
-        except KeyError:
-            name = None
-        try:
-            description = self.element.attrib["description"]
-        except KeyError:
-            description = None
-
-        # Get the Pydantic model schema.
-        schema = self.model.schema()
-        field_descriptions = get_field_descriptions(self.model)
-
-        # Make the XML as follows using lxml
-        # <object name="..." description="..." format="semicolon separated root validators" pydantic="ModelName"> # noqa: E501
-        #     <type name="..." description="..." format="semicolon separated validators" /> # noqa: E501
-        # </object>
-
-        # Add the object element, opening tag
-        xml = ""
-        root_validators = "; ".join(
-            list(pydantic_validators[self.model]["__root__"].keys())
-        )
-        xml += "<object "
-        if name:
-            xml += f' name="{name}"'
-        if description:
-            xml += f' description="{description}"'
-        if root_validators:
-            xml += f' format="{root_validators}"'
-        xml += f' pydantic="{self.model.__name__}"'
-        xml += ">"
-
-        # Add all the nested fields
-        for field in schema["properties"]:
-            properties = schema["properties"][field]
-            field_type = PYDANTIC_SCHEMA_TYPE_MAP[properties["type"]]
-            field_validators = "; ".join(
-                list(pydantic_validators[self.model][field].keys())
-            )
-            try:
-                field_description = field_descriptions[field]
-            except KeyError:
-                field_description = ""
-            xml += f"<{field_type}"
-            xml += f' name="{field}"'
-            if field_description:
-                xml += f' description="{field_descriptions[field]}"'
-            if field_validators:
-                xml += f' format="{field_validators}"'
-            xml += " />"
-
-        # Close the object element
-        xml += "</object>"
-
-        # Convert the string to an XML element, making sure to format it.
-        return ET.fromstring(
-            xml, parser=ET.XMLParser(encoding="utf-8", remove_blank_text=True)
-        )
+            name = child.attrib["name"]
+            if isinstance(name, bytes):
+                name = name.decode()
+            self._children[name] = child_data_type.from_xml(child, document_store)
 
 
 # @register_type("key")

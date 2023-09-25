@@ -3,12 +3,13 @@ from abc import ABC, abstractmethod
 from collections import namedtuple
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from guardrails.embedding import EmbeddingBase
 
+from guardrails.embedding import EmbeddingBase
 from guardrails.vectordb import VectorDBBase
 
 try:
     import sqlalchemy
+    import sqlalchemy.engine as Engine
     import sqlalchemy.orm as orm
 except ImportError:
     sqlalchemy = None
@@ -111,7 +112,12 @@ class EphemeralDocumentStore(DocumentStoreBase):
     """EphemeralDocumentStore is a document store that stores the documents on
     local disk and use a ephemeral vector store like Faiss."""
 
-    def __init__(self, vector_db: Optional["VectorDBBase"] = None, path: Optional[str] = None, embedding_model: Optional["EmbeddingBase"] = None):
+    def __init__(
+        self,
+        vector_db: Optional["VectorDBBase"] = None,
+        path: Optional[str] = None,
+        embedding_model: Optional["EmbeddingBase"] = None,
+    ):
         """Creates a new EphemeralDocumentStore.
 
         Args:
@@ -132,7 +138,8 @@ class EphemeralDocumentStore(DocumentStoreBase):
                 embedding_model = OpenAIEmbedding()
 
             vector_db = Faiss.new_flat_ip_index(
-                embedding_model.output_dim, embedder=embedding_model)
+                embedding_model.output_dim, embedder=embedding_model
+            )
         self._vector_db = vector_db
         self._storage = SQLMetadataStore(path=path)
 
@@ -204,12 +211,20 @@ else:
 
 
 class SQLMetadataStore:
+    _engine: Engine
+
     def __init__(self, path: Optional[str] = None):
-        conn = f"sqlite:///{path}" if path is not None else "sqlite://"
-        self._engine = sqlalchemy.create_engine(conn)
-        SqlDocument.metadata.create_all(self._engine, checkfirst=True)
+        self._path = path
+        self._conn = f"sqlite:///{path}" if path is not None else "sqlite://"
+        self._engine = None
+
+    def init_engine(self):
+        if not self._engine:
+            self._engine = sqlalchemy.create_engine(self._conn)
+            SqlDocument.metadata.create_all(self._engine, checkfirst=True)
 
     def add_docs(self, docs: List[Document], vdb_last_index: int):
+        self.init_engine()
         vector_id = vdb_last_index
         with orm.Session(self._engine) as session:
             for doc in docs:
@@ -228,6 +243,7 @@ class SQLMetadataStore:
             session.commit()
 
     def get_pages_for_for_indexes(self, indexes: List[int]) -> List[Page]:
+        self.init_engine()
         pages: List[Page] = []
         with orm.Session(self._engine) as session:
             for index in indexes:

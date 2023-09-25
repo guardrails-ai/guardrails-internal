@@ -1,50 +1,70 @@
 from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
+from pydantic import BaseModel, Field, PrivateAttr
 from rich.console import Group
 from rich.panel import Panel
 from rich.pretty import pretty_repr
+from rich.table import Table
 from rich.tree import Tree
 
-from guardrails.prompt import Prompt
-from guardrails.utils.reask_utils import ReAsk, gather_reasks, prune_obj_for_reasking
+from guardrails.prompt import Instructions, Prompt
+from guardrails.utils.reask_utils import (
+    FieldReAsk,
+    ReAsk,
+    SkeletonReAsk,
+    gather_reasks,
+    prune_obj_for_reasking,
+)
+from guardrails.validators import ValidationResult
 
 
-@dataclass
-class ValidatorLogs:
+class ArbitraryModel(BaseModel):
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class ValidatorLogs(ArbitraryModel):
     """Logs for a single validator."""
 
     validator_name: str
     value_before_validation: Any
+    validation_result: Optional[ValidationResult] = None
     value_after_validation: Optional[Any] = None
 
 
-@dataclass
-class FieldValidationLogs:
+class FieldValidationLogs(ArbitraryModel):
     """Logs for a single field."""
 
-    validator_logs: List[ValidatorLogs] = field(default_factory=list)
-    children: Dict[Union[int, str], "FieldValidationLogs"] = field(default_factory=dict)
+    validator_logs: List[ValidatorLogs] = Field(default_factory=list)
+    children: Dict[Union[int, str], "FieldValidationLogs"] = Field(default_factory=dict)
 
 
-@dataclass
-class GuardLogs:
+class LLMResponse(ArbitraryModel):
+    prompt_token_count: Optional[int] = None
+    response_token_count: Optional[int] = None
+    output: str
+
+
+class GuardLogs(ArbitraryModel):
     prompt: Optional[Prompt] = None
-    instructions: Optional[str] = None
-    output: Optional[str] = None
-    parsed_output: Optional[dict] = None
-    validated_output: Optional[dict] = None
-    reasks: Optional[List[ReAsk]] = None
+    instructions: Optional[Instructions] = None
+    llm_response: Optional[LLMResponse] = None
+    msg_history: Optional[List[Dict[str, Prompt]]] = None
+    parsed_output: Optional[Dict] = None
+    validated_output: Optional[Union[Dict, ReAsk]] = None
+    reasks: Optional[Sequence[ReAsk]] = None
 
-    field_validation_logs: Dict[Union[int, str], FieldValidationLogs] = field(
-        default_factory=dict
-    )
+    field_validation_logs: Optional[FieldValidationLogs] = None
 
-    _previous_logs: Optional["GuardLogs"] = None
+    _previous_logs: Optional["GuardLogs"] = PrivateAttr(None)
 
-    def set_validated_output(self, validated_output):
-        if self._previous_logs is not None:
+    def set_validated_output(self, validated_output, is_full_schema_reask: bool):
+        if (
+            self._previous_logs is not None
+            and not is_full_schema_reask
+            and not isinstance(validated_output, SkeletonReAsk)
+        ):
             validated_output = merge_reask_output(
                 self._previous_logs.validated_output, validated_output
             )
@@ -56,7 +76,29 @@ class GuardLogs:
         return gather_reasks(self.validated_output)
 
     @property
+    def output(self) -> Optional[str]:
+        if self.llm_response is None:
+            return None
+        return self.llm_response.output
+
+    @property
     def rich_group(self) -> Group:
+        def create_msg_history_table(
+            msg_history: Optional[List[Dict[str, Prompt]]]
+        ) -> Union[str, Table]:
+            if msg_history is None:
+                return "No message history."
+            table = Table(show_lines=True)
+            table.add_column("Role", justify="right", no_wrap=True)
+            table.add_column("Content")
+
+            for msg in msg_history:
+                table.add_row(str(msg["role"]), msg["content"].source)
+
+            return table
+
+        table = create_msg_history_table(self.msg_history)
+
         if self.instructions is not None:
             return Group(
                 Panel(
@@ -67,7 +109,8 @@ class GuardLogs:
                 Panel(
                     self.instructions.source, title="Instructions", style="on #FFF0F2"
                 ),
-                Panel(self.output, title="Raw LLM Output", style="on #F5F5DC"),
+                Panel(table, title="Message History", style="on #E7DFEB"),
+                Panel(self.output or "", title="Raw LLM Output", style="on #F5F5DC"),
                 Panel(
                     pretty_repr(self.validated_output),
                     title="Validated Output",
@@ -81,7 +124,8 @@ class GuardLogs:
                     title="Prompt",
                     style="on #F0F8FF",
                 ),
-                Panel(self.output, title="Raw LLM Output", style="on #F5F5DC"),
+                Panel(table, title="Message History", style="on #E7DFEB"),
+                Panel(self.output or "", title="Raw LLM Output", style="on #F5F5DC"),
                 Panel(
                     pretty_repr(self.validated_output),
                     title="Validated Output",
@@ -90,8 +134,7 @@ class GuardLogs:
             )
 
 
-@dataclass
-class GuardHistory:
+class GuardHistory(ArbitraryModel):
     history: List[GuardLogs]
 
     def push(self, guard_log: GuardLogs) -> None:
@@ -110,35 +153,34 @@ class GuardHistory:
         return tree
 
     @property
-    def validated_output(self) -> dict:
+    def validated_output(self) -> Optional[Union[Dict, ReAsk]]:
         """Returns the latest validated output."""
         return self.history[-1].validated_output
 
     @property
-    def output(self) -> str:
+    def output(self) -> Optional[str]:
         """Returns the latest output."""
         return self.history[-1].output
 
     @property
-    def output_as_dict(self) -> dict:
+    def output_as_dict(self) -> Optional[Dict]:
         """Returns the latest output as a dict."""
         return self.history[-1].parsed_output
 
     @property
-    def failed_validations(self) -> List[ReAsk]:
+    def failed_validations(self) -> List[List[ReAsk]]:
         """Returns all failed validations."""
         return [log.failed_validations for log in self.history]
 
 
-@dataclass
-class GuardState:
-    all_histories: List[GuardHistory]
+class GuardState(ArbitraryModel):
+    all_histories: List[GuardHistory] = Field(default_factory=list)
 
     def push(self, guard_history: GuardHistory) -> None:
         self.all_histories += [guard_history]
 
     @property
-    def most_recent_call(self) -> GuardHistory:
+    def most_recent_call(self) -> Optional[GuardHistory]:
         """Returns the most recent call."""
         if not len(self.all_histories):
             return None
@@ -168,7 +210,6 @@ def merge_reask_output(previous_response, reask_response) -> Dict:
     Returns:
         The merged output.
     """
-    from guardrails.validators import PydanticReAsk
 
     if isinstance(previous_response, ReAsk):
         return reask_response
@@ -181,19 +222,14 @@ def merge_reask_output(previous_response, reask_response) -> Dict:
     merged_json = deepcopy(previous_response)
 
     def update_reasked_elements(pruned_reask_json, reask_response_dict):
-        if isinstance(pruned_reask_json, PydanticReAsk):
-            corrected_value = reask_response_dict
-            # Get the path from any of the ReAsk objects in the PydanticReAsk object
-            # all of them have the same path.
-            path = [v.path for v in pruned_reask_json.values() if isinstance(v, ReAsk)][
-                0
-            ]
-            update_response_by_path(merged_json, path, corrected_value)
-
-        elif isinstance(pruned_reask_json, dict):
+        if isinstance(pruned_reask_json, dict):
             for key, value in pruned_reask_json.items():
-                if isinstance(value, ReAsk):
-                    corrected_value = reask_response_dict[key]
+                if isinstance(value, FieldReAsk):
+                    if value.path is None:
+                        raise RuntimeError(
+                            "FieldReAsk object must have a path attribute."
+                        )
+                    corrected_value = reask_response_dict.get(key)
                     update_response_by_path(merged_json, value.path, corrected_value)
                 else:
                     update_reasked_elements(
@@ -201,7 +237,11 @@ def merge_reask_output(previous_response, reask_response) -> Dict:
                     )
         elif isinstance(pruned_reask_json, list):
             for i, item in enumerate(pruned_reask_json):
-                if isinstance(item, ReAsk):
+                if isinstance(item, FieldReAsk):
+                    if item.path is None:
+                        raise RuntimeError(
+                            "FieldReAsk object must have a path attribute."
+                        )
                     corrected_value = reask_response_dict[i]
                     update_response_by_path(merged_json, item.path, corrected_value)
                 else:
