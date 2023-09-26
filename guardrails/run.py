@@ -406,7 +406,7 @@ class Runner:
         """Validate the output."""
         with start_action(action_type="validate", index=index) as action:
             validated_output = output_schema.validate(
-                guard_logs, parsed_output, self.metadata
+                guard_logs, parsed_output, self.metadata, attempt_number=index
             )
 
             action.log(

@@ -46,6 +46,8 @@ from guardrails.validators import (
     filter_in_dict,
 )
 
+from guardrails.utils.telemetry_utils import trace_validation_run
+
 if TYPE_CHECKING:
     pass
 
@@ -388,7 +390,7 @@ class Schema:
         """
         raise NotImplementedError
 
-    def validate(self, guard_logs: GuardLogs, data: Any, metadata: Dict) -> Any:
+    def validate(self, guard_logs: GuardLogs, data: Any, metadata: Dict, attempt_number: int) -> Any:
         """Validate a dictionary of data against the schema.
 
         Args:
@@ -400,7 +402,7 @@ class Schema:
         raise NotImplementedError
 
     async def async_validate(
-        self, guard_logs: GuardLogs, data: Any, metadata: Dict
+        self, guard_logs: GuardLogs, data: Any, metadata: Dict, attempt_number: int
     ) -> Any:
         """Asynchronously validate a dictionary of data against the schema.
 
@@ -629,6 +631,7 @@ class JsonSchema(Schema):
         guard_logs: GuardLogs,
         data: Optional[Dict[str, Any]],
         metadata: Dict,
+        attempt_number: int,
     ) -> Any:
         """Validate a dictionary of data against the schema.
 
@@ -702,6 +705,12 @@ class JsonSchema(Schema):
             validation_logs=validation_logs,
         )
 
+        # TODO: Capture error messages once Top Level error handling is merged in
+        trace_validation_run(
+            validation_logs=validation_logs,
+            attempt_number=attempt_number
+        )
+
         if check_refrain_in_dict(validated_response):
             # If the data contains a `Refain` value, we return an empty
             # dictionary.
@@ -718,6 +727,7 @@ class JsonSchema(Schema):
         guard_logs: GuardLogs,
         data: Optional[Dict[str, Any]],
         metadata: Dict,
+        attempt_number: int,
     ) -> Any:
         """Validate a dictionary of data against the schema.
 
@@ -786,6 +796,12 @@ class JsonSchema(Schema):
             metadata=metadata,
             validator_setup=validation,
             validation_logs=validation_logs,
+        )
+
+        # TODO: Capture error messages once Top Level error handling is merged in
+        trace_validation_run(
+            validation_logs=validation_logs,
+            attempt_number=attempt_number
         )
 
         if check_refrain_in_dict(validated_response):
@@ -938,6 +954,7 @@ class StringSchema(Schema):
         guard_logs: GuardLogs,
         data: Any,
         metadata: Dict,
+        attempt_number: int,
     ) -> Any:
         """Validate a dictionary of data against the schema.
 
@@ -971,6 +988,12 @@ class StringSchema(Schema):
             validation_logs=validation_logs,
         )
 
+        # TODO: Capture error messages once Top Level error handling is merged in
+        trace_validation_run(
+            validation_logs=validation_logs,
+            attempt_number=attempt_number
+        )
+
         validated_response = {self.string_key: validated_response}
 
         if check_refrain_in_dict(validated_response):
@@ -991,6 +1014,7 @@ class StringSchema(Schema):
         guard_logs: GuardLogs,
         data: Any,
         metadata: Dict,
+        attempt_number: int,
     ) -> Any:
         """Validate a dictionary of data against the schema.
 
@@ -1022,6 +1046,12 @@ class StringSchema(Schema):
             metadata=metadata,
             validator_setup=validation,
             validation_logs=validation_logs,
+        )
+
+        # TODO: Capture error messages once Top Level error handling is merged in
+        trace_validation_run(
+            validation_logs=validation_logs,
+            attempt_number=attempt_number
         )
 
         validated_response = {self.string_key: validated_response}
