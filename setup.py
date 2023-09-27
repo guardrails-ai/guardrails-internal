@@ -52,6 +52,9 @@ SUMMARY_REQUIREMENTS = ["thefuzz", "nltk"]
 
 VECTORDB_REQUIREMENTS = ["faiss-cpu", "numpy", "tiktoken"]
 
+# TODO: Add the api client here once it is published
+AS_A_SERVICE_REQUIREMENTS = ["opentelemetry-sdk"]
+
 DEV_REQUIREMENTS = [
     "black==22.12.0",
     "isort>=5.12.0",
@@ -66,6 +69,7 @@ DEV_REQUIREMENTS = [
     "pytest-asyncio",
     *SQL_REQUIREMENTS,
     *VECTORDB_REQUIREMENTS,
+    *AS_A_SERVICE_REQUIREMENTS,
 ] + DOCS_REQUIREMENTS
 
 MANIFEST_REQUIREMENTS = ["manifest-ml"]
@@ -83,12 +87,14 @@ EXTRAS = {
     "profanity": PROFANITY_REQUIREMENTS,
     "critique": CRITIQUE_REQUIREMENTS,
     "summary": SUMMARY_REQUIREMENTS,
+    "as_a_service": AS_A_SERVICE_REQUIREMENTS,
     "all": [
         *DEV_REQUIREMENTS,
         *MANIFEST_REQUIREMENTS,
         *PROFANITY_REQUIREMENTS,
         *CRITIQUE_REQUIREMENTS,
         *SUMMARY_REQUIREMENTS,
+        *AS_A_SERVICE_REQUIREMENTS
     ],
 }
 
