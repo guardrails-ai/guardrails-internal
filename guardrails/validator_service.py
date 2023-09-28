@@ -5,17 +5,17 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
-from guardrails.datatypes import FieldValidation
-from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
-from guardrails.utils.reask_utils import FieldReAsk, ReAsk
-from guardrails.validators import (
+from guardrails.classes.validation_result import (
     FailResult,
     Filter,
     PassResult,
     Refrain,
-    Validator,
     ValidatorError,
 )
+from guardrails.datatypes import FieldValidation
+from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
+from guardrails.utils.reask_utils import FieldReAsk, ReAsk
+from guardrails.validators import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,8 @@ class ValidatorServiceBase:
         )
         validation_logs.validator_logs.append(validator_logs)
 
+        print("validator.validate: ", validator.validate)
+        print("calling validator.validate with: ", value, metadata)
         result = validator.validate(value, metadata)
         if result is None:
             result = PassResult()

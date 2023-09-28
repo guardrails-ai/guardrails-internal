@@ -8,6 +8,7 @@ from rich.pretty import pretty_repr
 from rich.table import Table
 from rich.tree import Tree
 
+from guardrails.classes.validation_result import ValidationResult
 from guardrails.prompt import Instructions, Prompt
 from guardrails.utils.reask_utils import (
     FieldReAsk,
@@ -16,7 +17,6 @@ from guardrails.utils.reask_utils import (
     gather_reasks,
     prune_obj_for_reasking,
 )
-from guardrails.validators import ValidationResult
 
 
 class ArbitraryModel(BaseModel):

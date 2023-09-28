@@ -2,11 +2,12 @@ import os
 
 import pytest
 
-from guardrails.document_store import EphemeralDocumentStore
 from guardrails.embedding import OpenAIEmbedding
+from guardrails.stores.document import EphemeralDocumentStore
 from guardrails.vectordb import Faiss
 
 
+# FIXME: We should be mocking any third party calls here
 @pytest.mark.skipif(
     os.environ.get("OPENAI_API_KEY") is None, reason="openai api key not set"
 )

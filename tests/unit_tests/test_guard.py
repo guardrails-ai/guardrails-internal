@@ -4,8 +4,9 @@ from pydantic import BaseModel
 
 import guardrails
 from guardrails import Guard, Rail, Validator
+from guardrails.classes.validation_result import PassResult
 from guardrails.datatypes import verify_metadata_requirements
-from guardrails.validators import PassResult, register_validator
+from guardrails.validators import register_validator
 
 
 @register_validator("myrequiringvalidator", data_type="string")

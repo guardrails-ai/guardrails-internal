@@ -38,6 +38,7 @@ from guardrails.prompt import Instructions, Prompt
 from guardrails.rail import Rail
 from guardrails.run import AsyncRunner, Runner
 from guardrails.schema import Schema
+from guardrails.stores.context import ContextStore, Tracer
 from guardrails.utils.logs_utils import GuardHistory, GuardLogs, GuardState
 from guardrails.utils.parsing_utils import get_template_variables
 from guardrails.utils.reask_utils import FieldReAsk, sub_reasks_with_fixed_values
@@ -66,6 +67,7 @@ class Guard:
     """
 
     _api_client: GuardrailsApiClient = None
+    _tracer = None
 
     def __init__(
         self,
@@ -77,6 +79,7 @@ class Guard:
             str
         ] = None,  # TODO: convert to auth object to support multiple LLM auth keys
         description: Optional[str] = None,
+        tracer: Tracer = None,
     ):
         """Initialize the Guard."""
         self.rail = rail
@@ -92,6 +95,8 @@ class Guard:
             else os.environ.get("OPENAI_API_KEY")
         )
         self.description = description
+        if not self._tracer and tracer is not None:
+            self._set_tracer(tracer)
 
         api_key = os.environ.get("GUARDRAILS_API_KEY")
         if api_key is not None:
@@ -191,6 +196,11 @@ class Guard:
             else 1
         )
 
+    def _set_tracer(self, tracer: Tracer = None) -> None:
+        self._tracer = tracer
+        context_store = ContextStore()
+        context_store.set_tracer(tracer)
+
     @classmethod
     def from_rail(
         cls,
@@ -198,6 +208,7 @@ class Guard:
         num_reasks: Optional[int] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        tracer: Tracer = None,
     ) -> "Guard":
         """Create a Schema from a `.rail` file.
 
@@ -208,12 +219,15 @@ class Guard:
         Returns:
             An instance of the `Guard` class.
         """
-
+        # We have to set the tracer in the ContextStore before the Rail,
+        #   and therefore the Validators, are initialized
+        cls._set_tracer(cls, tracer)
         return cls(
             Rail.from_file(rail_file),
             num_reasks=num_reasks,
             name=name,
             description=description,
+            tracer=tracer,
         )
 
     @classmethod
@@ -223,6 +237,7 @@ class Guard:
         num_reasks: Optional[int] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        tracer: Tracer = None,
     ) -> "Guard":
         """Create a Schema from a `.rail` string.
 
@@ -233,11 +248,15 @@ class Guard:
         Returns:
             An instance of the `Guard` class.
         """
+        # We have to set the tracer in the ContextStore before the Rail,
+        #   and therefore the Validators, are initialized
+        cls._set_tracer(cls, tracer)
         return cls(
             Rail.from_string(rail_string),
             num_reasks=num_reasks,
             name=name,
             description=description,
+            tracer=tracer,
         )
 
     @classmethod
@@ -249,8 +268,12 @@ class Guard:
         num_reasks: Optional[int] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        tracer: Tracer = None,
     ) -> "Guard":
         """Create a Guard instance from a Pydantic model and prompt."""
+        # We have to set the tracer in the ContextStore before the Rail,
+        #   and therefore the Validators, are initialized
+        cls._set_tracer(cls, tracer)
         rail = Rail.from_pydantic(
             output_class=output_class, prompt=prompt, instructions=instructions
         )
@@ -260,6 +283,7 @@ class Guard:
             base_model=output_class,
             name=name,
             description=description,
+            tracer=tracer,
         )
 
     @classmethod
@@ -272,6 +296,7 @@ class Guard:
         reask_prompt: Optional[str] = None,
         reask_instructions: Optional[str] = None,
         num_reasks: Optional[int] = None,
+        tracer: Tracer = None,
     ) -> "Guard":
         """Create a Guard instance for a string response with prompt,
         instructions, and validations.
@@ -285,6 +310,9 @@ class Guard:
             reask_instructions (str, optional): Alternative instructions to use during reasks. Defaults to None.
             num_reasks (int, optional): The max times to re-ask the LLM for invalid output.
         """  # noqa
+        # We have to set the tracer in the ContextStore before the Rail,
+        #   and therefore the Validators, are initialized
+        cls._set_tracer(cls, tracer)
         rail = Rail.from_string_validators(
             validators=validators,
             description=description,
@@ -293,7 +321,7 @@ class Guard:
             reask_prompt=reask_prompt,
             reask_instructions=reask_instructions,
         )
-        return cls(rail, num_reasks=num_reasks)
+        return cls(rail, num_reasks=num_reasks, tracer=tracer)
 
     @overload
     def __call__(
@@ -645,6 +673,9 @@ class Guard:
 
         context = contextvars.ContextVar("kwargs")
         context.set(kwargs)
+        # TODO: test this
+        # context_store = ContextStore()
+        # context_store.set_context_var("kwargs", kwargs)
 
         if self._api_client is not None and llm_api_is_manifest(llm_api) is not True:
             return self.validate(

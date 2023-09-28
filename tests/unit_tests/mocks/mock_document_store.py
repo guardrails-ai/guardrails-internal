@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from guardrails.document_store import Document, DocumentStoreBase, Page
+from guardrails.stores.document import Document, DocumentStoreBase, Page
 
 
 class MockDocumentStore(DocumentStoreBase):

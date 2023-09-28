@@ -2,10 +2,10 @@ import asyncio
 
 import pytest
 
+from guardrails.classes.validation_result import PassResult
 from guardrails.datatypes import FieldValidation
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.validator_service import AsyncValidatorService
-from guardrails.validators import PassResult
 
 from .mocks import MockLoop
 from .mocks.mock_validator import create_mock_validator

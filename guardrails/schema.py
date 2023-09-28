@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 from lxml import etree as ET
 
 from guardrails import validator_service
+from guardrails.classes.validation_result import FailResult
 from guardrails.datatypes import DataType, String
-from guardrails.document_store import DocumentStoreBase
 from guardrails.llm_providers import (
     AsyncOpenAICallable,
     AsyncOpenAIChatCallable,
@@ -21,6 +21,7 @@ from guardrails.llm_providers import (
     PromptCallableBase,
 )
 from guardrails.prompt import Instructions, Prompt
+from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.constants import constants
 from guardrails.utils.json_utils import (
     extract_json_from_ouput,
@@ -37,16 +38,10 @@ from guardrails.utils.reask_utils import (
     get_reasks_by_element,
     prune_obj_for_reasking,
 )
+from guardrails.utils.telemetry_utils import trace_validation_result
 from guardrails.utils.transform_utils import flatten, merge
 from guardrails.validator_service import FieldValidation
-from guardrails.validators import (
-    FailResult,
-    Validator,
-    check_refrain_in_dict,
-    filter_in_dict,
-)
-
-from guardrails.utils.telemetry_utils import trace_validation_run
+from guardrails.validators import Validator, check_refrain_in_dict, filter_in_dict
 
 if TYPE_CHECKING:
     pass
@@ -208,6 +203,7 @@ class FormatAttr:
         except AttributeError:
             raise AttributeError("Must call `get_validators` first.")
 
+    # TODO: Remove document_store
     def get_validators(
         self, document_store: DocumentStoreBase, strict: bool = False
     ) -> List[Validator]:
@@ -281,9 +277,7 @@ class FormatAttr:
                 # beginning of a rail file.
 
             # Create the validator.
-            _validators.append(
-                validator(*args, document_store=document_store, on_fail=on_fail)
-            )
+            _validators.append(validator(*args, on_fail=on_fail))
 
         self._validators = _validators
         self._unregistered_validators = _unregistered_validators
@@ -390,7 +384,9 @@ class Schema:
         """
         raise NotImplementedError
 
-    def validate(self, guard_logs: GuardLogs, data: Any, metadata: Dict, attempt_number: int) -> Any:
+    def validate(
+        self, guard_logs: GuardLogs, data: Any, metadata: Dict, attempt_number: int
+    ) -> Any:
         """Validate a dictionary of data against the schema.
 
         Args:
@@ -706,9 +702,8 @@ class JsonSchema(Schema):
         )
 
         # TODO: Capture error messages once Top Level error handling is merged in
-        trace_validation_run(
-            validation_logs=validation_logs,
-            attempt_number=attempt_number
+        trace_validation_result(
+            validation_logs=validation_logs, attempt_number=attempt_number
         )
 
         if check_refrain_in_dict(validated_response):
@@ -799,9 +794,8 @@ class JsonSchema(Schema):
         )
 
         # TODO: Capture error messages once Top Level error handling is merged in
-        trace_validation_run(
-            validation_logs=validation_logs,
-            attempt_number=attempt_number
+        trace_validation_result(
+            validation_logs=validation_logs, attempt_number=attempt_number
         )
 
         if check_refrain_in_dict(validated_response):
@@ -989,9 +983,8 @@ class StringSchema(Schema):
         )
 
         # TODO: Capture error messages once Top Level error handling is merged in
-        trace_validation_run(
-            validation_logs=validation_logs,
-            attempt_number=attempt_number
+        trace_validation_result(
+            validation_logs=validation_logs, attempt_number=attempt_number
         )
 
         validated_response = {self.string_key: validated_response}
@@ -1049,9 +1042,8 @@ class StringSchema(Schema):
         )
 
         # TODO: Capture error messages once Top Level error handling is merged in
-        trace_validation_run(
-            validation_logs=validation_logs,
-            attempt_number=attempt_number
+        trace_validation_result(
+            validation_logs=validation_logs, attempt_number=attempt_number
         )
 
         validated_response = {self.string_key: validated_response}

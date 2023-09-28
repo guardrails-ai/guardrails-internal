@@ -3,14 +3,13 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
-from guardrails.utils.reask_utils import FieldReAsk
-from guardrails.validators import (
+from guardrails.classes.validation_result import (
     FailResult,
     PassResult,
     ValidationResult,
-    Validator,
-    register_validator,
 )
+from guardrails.utils.reask_utils import FieldReAsk
+from guardrails.validators import Validator, register_validator
 
 prompt = """Generate data for possible users in accordance with the specification below.
 

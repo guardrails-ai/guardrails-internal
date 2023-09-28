@@ -5,9 +5,13 @@ import pytest
 
 import guardrails as gd
 from guardrails.schema import JsonSchema
+from tests.integration_tests.test_assets.fixtures import (  # noqa
+    fixture_llm_output,
+    fixture_rail_spec,
+    fixture_validated_output,
+)
 
 from .mock_llm_outputs import MockAsyncOpenAICallable, entity_extraction
-from .test_guard import *  # noqa: F403, F401
 
 
 @pytest.mark.asyncio
@@ -215,6 +219,7 @@ async def test_entity_extraction_with_refrain(mocker):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("rail_spec", "llm_output", "validated_output")
 async def test_rail_spec_output_parse(rail_spec, llm_output, validated_output):
     """Test that the rail_spec fixture is working."""
     guard = gd.Guard.from_rail_string(rail_spec)

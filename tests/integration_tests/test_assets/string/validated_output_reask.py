@@ -1,5 +1,5 @@
+from guardrails.classes.validation_result import FailResult
 from guardrails.utils.reask_utils import FieldReAsk
-from guardrails.validators import FailResult
 
 VALIDATED_OUTPUT_REASK = FieldReAsk(
     incorrect_value="Tomato Cheese Pizza",

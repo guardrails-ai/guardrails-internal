@@ -4,13 +4,14 @@ from typing import Union
 import pytest
 from pydantic import BaseModel, Field, HttpUrl
 
+from guardrails.classes.validation_result import FailResult, PassResult
 from guardrails.datatypes import PythonCode
 from guardrails.utils.pydantic_utils import (
     add_pydantic_validators_as_guardrails_validators,
     add_validator,
     type_annotation_to_string,
 )
-from guardrails.validators import FailResult, PassResult, ValidChoices, ValidLength
+from guardrails.validators import ValidChoices, ValidLength
 
 
 def test_add_pydantic_validators_as_guardrails_validators():

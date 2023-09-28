@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 import pydantic
 from lxml import etree as ET
 
-from guardrails.validators import FailResult
+from guardrails.classes.validation_result import FailResult
 
 
 class ReAsk(pydantic.BaseModel):

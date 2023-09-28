@@ -7,16 +7,13 @@ import pytest
 from pydantic import BaseModel, Field, root_validator, validator
 
 import guardrails as gd
-from guardrails.utils.pydantic_utils import add_validator
-from guardrails.validators import (
+from guardrails.classes.validation_result import (
     FailResult,
     PassResult,
-    TwoWords,
     ValidationResult,
-    Validator,
-    ValidLength,
-    register_validator,
 )
+from guardrails.utils.pydantic_utils import add_validator
+from guardrails.validators import TwoWords, Validator, ValidLength, register_validator
 
 from .mock_llm_outputs import MockOpenAICallable, MockOpenAIChatCallable
 from .test_assets import python_rail, string

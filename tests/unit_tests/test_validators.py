@@ -7,6 +7,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from guardrails import Guard
+from guardrails.classes.validation_result import (
+    FailResult,
+    Filter,
+    PassResult,
+    Refrain,
+    ValidationResult,
+)
 from guardrails.datatypes import DataType
 from guardrails.schema import StringSchema
 from guardrails.utils.reask_utils import FieldReAsk
@@ -14,15 +21,10 @@ from guardrails.validators import (
     BugFreeSQL,
     ExtractedSummarySentencesMatch,
     ExtractiveSummary,
-    FailResult,
-    Filter,
-    PassResult,
     ProvenanceV1,
-    Refrain,
     SimilarToDocument,
     SqlColumnPresence,
     TwoWords,
-    ValidationResult,
     ValidLength,
     check_refrain_in_dict,
     filter_in_dict,
@@ -190,10 +192,23 @@ def hello_validator(value: Any, metadata: Dict[str, Any]) -> ValidationResult:
     return PassResult()
 
 
-def test_validator_as_tuple():
-    # (Callable, on_fail) tuple fix
+@pytest.mark.parametrize(
+    "validators,expected_output",
+    [
+        # (Callable, on_fail) tuple fix
+        ([(hello_validator, "fix")], {"a_field": "hullo"}),
+        # (string, on_fail) tuple fix
+        (
+            [("two_words", "reask"), ("mycustomhellovalidator", "fix")],
+            {"a_field": "hullo"},
+        ),
+        # (Validator, on_fail) tuple fix
+        ([(TwoWords(), "fix")], {"a_field": "hello there"}),
+    ],
+)
+def test_validator_as_tuple_fix(validators, expected_output):
     class MyModel(BaseModel):
-        a_field: str = Field(..., validators=[(hello_validator, "fix")])
+        a_field: str = Field(..., validators=validators)
 
     guard = Guard.from_pydantic(MyModel)
     output = guard.parse(
@@ -201,51 +216,45 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hullo"}
+    assert output == expected_output
 
-    # (string, on_fail) tuple fix
 
-    class MyModel(BaseModel):
-        a_field: str = Field(
-            ..., validators=[("two_words", "reask"), ("mycustomhellovalidator", "fix")]
+hullo_reask = FieldReAsk(
+    incorrect_value="hello there yo",
+    fail_results=[
+        FailResult(
+            error_message="Hello is too basic, try something more creative.",
+            fix_value="hullo",
         )
+    ],
+    path=["a_field"],
+)
+hello_reask = FieldReAsk(
+    incorrect_value="hello there yo",
+    fail_results=[
+        FailResult(
+            error_message="must be exactly two words",
+            fix_value="hello there",
+        )
+    ],
+    path=["a_field"],
+)
 
-    guard = Guard.from_pydantic(MyModel)
-    output = guard.parse(
-        '{"a_field": "hello there yo"}',
-        num_reasks=0,
-    )
 
-    assert output == {"a_field": "hullo"}
-
-    # (Validator, on_fail) tuple fix
-
+@pytest.mark.parametrize(
+    "validators,expected_output,expected_reask",
+    [
+        # (Validator, on_fail) tuple reask
+        ([(hello_validator, "reask")], {"a_field": "hullo"}, hullo_reask),
+        # (string, on_fail) tuple reask
+        ([("two-words", "reask")], {"a_field": "hello there"}, hello_reask),
+        # (Validator, on_fail) tuple reask
+        ([(TwoWords(), "reask")], {"a_field": "hello there"}, hello_reask),
+    ],
+)
+def test_validator_as_tuple_reask(validators, expected_output, expected_reask):
     class MyModel(BaseModel):
-        a_field: str = Field(..., validators=[(TwoWords(), "fix")])
-
-    guard = Guard.from_pydantic(MyModel)
-    output = guard.parse(
-        '{"a_field": "hello there yo"}',
-        num_reasks=0,
-    )
-
-    assert output == {"a_field": "hello there"}
-
-    # (Validator, on_fail) tuple reask
-
-    hullo_reask = FieldReAsk(
-        incorrect_value="hello there yo",
-        fail_results=[
-            FailResult(
-                error_message="Hello is too basic, try something more creative.",
-                fix_value="hullo",
-            )
-        ],
-        path=["a_field"],
-    )
-
-    class MyModel(BaseModel):
-        a_field: str = Field(..., validators=[(hello_validator, "reask")])
+        a_field: str = Field(..., validators=validators)
 
     guard = Guard.from_pydantic(MyModel)
 
@@ -254,61 +263,15 @@ def test_validator_as_tuple():
         num_reasks=0,
     )
 
-    assert output == {"a_field": "hullo"}
+    assert output == expected_output
     assert (
         guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
-        == hullo_reask
+        == expected_reask
     )
 
-    hello_reask = FieldReAsk(
-        incorrect_value="hello there yo",
-        fail_results=[
-            FailResult(
-                error_message="must be exactly two words",
-                fix_value="hello there",
-            )
-        ],
-        path=["a_field"],
-    )
 
-    # (string, on_fail) tuple reask
-
-    class MyModel(BaseModel):
-        a_field: str = Field(..., validators=[("two-words", "reask")])
-
-    guard = Guard.from_pydantic(MyModel)
-
-    output = guard.parse(
-        '{"a_field": "hello there yo"}',
-        num_reasks=0,
-    )
-
-    assert output == {"a_field": "hello there"}
-    assert (
-        guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
-        == hello_reask
-    )
-
-    # (Validator, on_fail) tuple reask
-
-    class MyModel(BaseModel):
-        a_field: str = Field(..., validators=[(TwoWords(), "reask")])
-
-    guard = Guard.from_pydantic(MyModel)
-
-    output = guard.parse(
-        '{"a_field": "hello there yo"}',
-        num_reasks=0,
-    )
-
-    assert output == {"a_field": "hello there"}
-    assert (
-        guard.guard_state.all_histories[0].history[0].parsed_output["a_field"]
-        == hello_reask
-    )
-
+def test_validator_as_tuple_raises():
     # Fail on string
-
     class MyModel(BaseModel):
         a_field: str = Field(..., validators=["two-words"])
 

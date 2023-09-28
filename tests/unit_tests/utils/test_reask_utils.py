@@ -4,6 +4,7 @@ import pytest
 from lxml import etree as ET
 
 from guardrails import Instructions, Prompt
+from guardrails.classes.validation_result import FailResult
 from guardrails.schema import JsonSchema
 from guardrails.utils import reask_utils
 from guardrails.utils.logs_utils import GuardLogs
@@ -12,8 +13,10 @@ from guardrails.utils.reask_utils import (
     gather_reasks,
     sub_reasks_with_fixed_values,
 )
-from guardrails.validators import FailResult
-from tests.unit_tests.mocks import MockDocumentStore
+
+# TODO: Revert
+# from tests.unit_tests.mocks import MockDocumentStore
+from ..mocks import MockDocumentStore
 
 
 @pytest.mark.parametrize(
@@ -447,7 +450,9 @@ Here are examples of simple (XML, JSON) pairs that show the expected behavior:
     document_store = MockDocumentStore()
     output_schema = JsonSchema(ET.fromstring(example_rail), document_store)
     guard_logs = GuardLogs()
-    validated = output_schema.validate(guard_logs, original_response, {})
+    validated = output_schema.validate(
+        guard_logs, original_response, {}, attempt_number=0
+    )
     reasks = output_schema.introspect(validated)
     (
         reask_schema,

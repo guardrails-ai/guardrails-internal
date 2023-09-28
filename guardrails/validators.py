@@ -13,16 +13,23 @@ import re
 import warnings
 from collections import defaultdict
 from functools import partial
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import openai
-import pydantic
-from pydantic import Field
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from guardrails.document_store import DocumentStoreBase
+from guardrails.classes.validation_result import (
+    FailResult,
+    Filter,
+    PassResult,
+    Refrain,
+    ValidationResult,
+)
+from guardrails.stores.context import ContextStore
+from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
+from guardrails.utils.telemetry_utils import trace_validator
 from guardrails.utils.validator_utils import PROVENANCE_V1_PROMPT
 
 try:
@@ -49,18 +56,6 @@ types_to_validators = defaultdict(list)
 
 
 logger = logging.getLogger(__name__)
-
-
-class ValidatorError(Exception):
-    """Base class for all validator errors."""
-
-
-class Filter:
-    pass
-
-
-class Refrain:
-    pass
 
 
 def check_refrain_in_list(schema: List) -> bool:
@@ -161,6 +156,18 @@ def filter_in_dict(schema: Dict) -> Dict:
     return filtered_dict
 
 
+def validator_factory(name: str, validate: Callable):
+    def validate_wrapper(self, *args, **kwargs):
+        return validate(*args, **kwargs)
+
+    validator = type(
+        name,
+        (Validator,),
+        {"validate": validate_wrapper, "rail_alias": name},
+    )
+    return validator
+
+
 def register_validator(
     name: str, data_type: Union[str, List[str]], namespace: Optional[str] = None
 ):
@@ -190,11 +197,7 @@ def register_validator(
                     f"Validator function {func.__name__} must take two arguments."
                 )
             # dynamically create Validator subclass with `validate` method as `func`
-            cls = type(
-                name,
-                (Validator,),
-                {"validate": staticmethod(func), "rail_alias": name},
-            )
+            cls = validator_factory(name, func)
         else:
             raise ValueError(
                 "Only functions and Validator subclasses "
@@ -227,28 +230,6 @@ def register_validator(
     return decorator
 
 
-class ValidationResult(pydantic.BaseModel):
-    outcome: str
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class PassResult(ValidationResult):
-    outcome: Literal["pass"] = "pass"
-
-    class ValueOverrideSentinel:
-        pass
-
-    # should only be used if Validator.override_value_on_pass is True
-    value_override: Optional[Any] = Field(default=ValueOverrideSentinel)
-
-
-class FailResult(ValidationResult):
-    outcome: Literal["fail"] = "fail"
-
-    error_message: str
-    fix_value: Optional[Any] = None
-
-
 class Validator:
     """Base class for validators."""
 
@@ -261,7 +242,6 @@ class Validator:
     def __init__(
         self,
         on_fail: Optional[Union[Callable, str]] = None,
-        document_store: Optional[DocumentStoreBase] = None,
         **kwargs,
     ):
         if on_fail is None:
@@ -275,7 +255,6 @@ class Validator:
 
         # Store the kwargs for the validator.
         self._kwargs = kwargs
-        self._store = document_store
 
         if self.namespace is not None:
             assert (
@@ -286,6 +265,38 @@ class Validator:
             assert (
                 self.rail_alias in validators_registry
             ), f"Validator {self.__class__.__name__} is not registered. "
+
+        child_cls = type(self)
+        print(" ")
+        print("============ START BEFORE TRACE ANNOTATION ============")
+        validate_spec = inspect.getfullargspec(child_cls.validate)
+        print("child_cls.validate arg_spec: ", validate_spec)
+        print(
+            "child_cls.validate.__self__: ",
+            (
+                child_cls.validate.__self__
+                if hasattr(child_cls.validate, "__self__")
+                else None
+            ),
+        )
+        print("============ END BEFORE TRACE ANNOTATION ============")
+        print(" ")
+        child_cls.validate = trace_validator(
+            name=child_cls.rail_alias, namespace=child_cls.namespace
+        )(child_cls.validate)
+        print("============ START AFTER TRACE ANNOTATION ============")
+        validate_spec = inspect.getfullargspec(child_cls.validate)
+        print("child_cls.validate arg_spec: ", validate_spec)
+        print(
+            "child_cls.validate.__self__: ",
+            (
+                child_cls.validate.__self__
+                if hasattr(child_cls.validate, "__self__")
+                else None
+            ),
+        )
+        print("============ END AFTER TRACE ANNOTATION ============")
+        print(" ")
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
         """Validates a value and return a validation result."""
@@ -324,7 +335,7 @@ class Validator:
 
         validator_args = []
         for arg in self.__init__.__code__.co_varnames[1:]:
-            if arg not in ("document_store", "on_fail", "args", "kwargs"):
+            if arg not in ("on_fail", "args", "kwargs"):
                 str_arg = str(self._kwargs[arg])
                 str_arg = "{" + str_arg + "}" if " " in str_arg else str_arg
                 validator_args.append(str_arg)
@@ -387,12 +398,11 @@ class PydanticFieldValidator(Validator):
     def __init__(
         self,
         field_validator: Callable,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable[..., Any]] = None,
         **kwargs,
     ):
         self.field_validator = field_validator
-        super().__init__(document_store=document_store, on_fail=on_fail, **kwargs)
+        super().__init__(on_fail=on_fail, **kwargs)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
         try:
@@ -432,10 +442,11 @@ class ValidRange(Validator):
         min: Optional[int] = None,
         max: Optional[int] = None,
         on_fail: Optional[Callable] = None,
-        document_store: Optional[DocumentStoreBase] = None,
     ):
         super().__init__(
-            on_fail=on_fail, min=min, max=max, document_store=document_store
+            on_fail=on_fail,
+            min=min,
+            max=max,
         )
 
         self._min = min
@@ -481,12 +492,9 @@ class ValidChoices(Validator):
     def __init__(
         self,
         choices: List[Any],
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
     ):
-        super().__init__(
-            document_store=document_store, on_fail=on_fail, choices=choices
-        )
+        super().__init__(on_fail=on_fail, choices=choices)
         self._choices = choices
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -573,11 +581,8 @@ class ValidLength(Validator):
         min: Optional[int] = None,
         max: Optional[int] = None,
         on_fail: Optional[Callable] = None,
-        document_store: Optional[DocumentStoreBase] = None,
     ):
-        super().__init__(
-            document_store=document_store, on_fail=on_fail, min=min, max=max
-        )
+        super().__init__(on_fail=on_fail, min=min, max=max)
         self._min = int(min) if min is not None else None
         self._max = int(max) if max is not None else None
 
@@ -796,10 +801,9 @@ class BugFreeSQL(Validator):
         self,
         conn: Optional[str] = None,
         schema_file: Optional[str] = None,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
     ):
-        super().__init__(document_store=document_store, on_fail=on_fail)
+        super().__init__(on_fail=on_fail)
         self._driver: SQLDriver = create_sql_driver(schema_file=schema_file, conn=conn)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -831,10 +835,9 @@ class SqlColumnPresence(Validator):
     def __init__(
         self,
         cols: List[str],
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
     ):
-        super().__init__(documnet_store=document_store, on_fail=on_fail, cols=cols)
+        super().__init__(on_fail=on_fail, cols=cols)
         self._cols = set(cols)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -877,12 +880,9 @@ class ExcludeSqlPredicates(Validator):
     def __init__(
         self,
         predicates: List[str],
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
     ):
-        super().__init__(
-            document_store=document_store, on_fail=on_fail, predicates=predicates
-        )
+        super().__init__(on_fail=on_fail, predicates=predicates)
         self._predicates = set(predicates)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -930,11 +930,11 @@ class SimilarToDocument(Validator):
 
     def __init__(
         self,
-        document_store: DocumentStoreBase,
         document: str,
         threshold: float = 0.7,
         model: str = "text-embedding-ada-002",
         on_fail: Optional[Callable] = None,
+        document_store: DocumentStoreBase = None,
     ):
         super().__init__(
             document_store=document_store,
@@ -955,7 +955,7 @@ class SimilarToDocument(Validator):
         self._document_embedding = np.array(embedding)
         self._model = model
         self._threshold = float(threshold)
-        self.document_store = document_store
+        self.document_store = document_store or ContextStore().get_document_store()
 
     @staticmethod
     def cosine_similarity(a: "np.ndarray", b: "np.ndarray") -> float:
@@ -1110,10 +1110,9 @@ class EndsWith(Validator):
     def __init__(
         self,
         end: str,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: str = "fix",
     ):
-        super().__init__(document_store=document_store, on_fail=on_fail, end=end)
+        super().__init__(on_fail=on_fail, end=end)
         self._end = end
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -1157,16 +1156,16 @@ class ExtractedSummarySentencesMatch(Validator):
 
     def __init__(
         self,
-        document_store: DocumentStoreBase,
         threshold: float = 0.7,
         on_fail: Optional[Callable] = None,
+        document_store: DocumentStoreBase = None,
         **kwargs: Optional[Dict[str, Any]],
     ):
         super().__init__(document_store=document_store, on_fail=on_fail, **kwargs)
         # TODO(shreya): Pass embedding_model, vector_db, document_store from spec
 
         self._threshold = float(threshold)
-        self.store = document_store
+        self.store = document_store or ContextStore().get_document_store()
 
     @staticmethod
     def _instantiate_store(
@@ -1175,7 +1174,7 @@ class ExtractedSummarySentencesMatch(Validator):
         if "document_store" in metadata:
             return metadata["document_store"]
 
-        from guardrails.document_store import EphemeralDocumentStore
+        from guardrails.stores.document import EphemeralDocumentStore
 
         if "vector_db" in metadata:
             vector_db = metadata["vector_db"]
@@ -1288,12 +1287,9 @@ class ReadingTime(Validator):
     def __init__(
         self,
         reading_time: int,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: str = "fix",
     ):
-        super().__init__(
-            documnet_store=document_store, on_fail=on_fail, max_time=reading_time
-        )
+        super().__init__(on_fail=on_fail, max_time=reading_time)
         self._max_time = reading_time
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -1350,11 +1346,10 @@ class ExtractiveSummary(Validator):
     def __init__(
         self,
         threshold: int = 85,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
         **kwargs,
     ):
-        super().__init__(document_store=document_store, on_fail=on_fail, **kwargs)
+        super().__init__(on_fail=on_fail, **kwargs)
 
         self._threshold = threshold
 
@@ -1464,11 +1459,10 @@ class RemoveRedundantSentences(Validator):
     def __init__(
         self,
         threshold: int = 70,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
         **kwargs,
     ):
-        super().__init__(on_fail, document_store=document_store, **kwargs)
+        super().__init__(on_fail, **kwargs)
         self._threshold = threshold
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -1542,7 +1536,6 @@ class SaliencyCheck(Validator):
         self,
         docs_dir: str,
         llm_callable: Optional[Callable] = None,
-        document_store: Optional[DocumentStoreBase] = None,
         on_fail: Optional[Callable] = None,
         threshold: float = 0.25,
         **kwargs,
@@ -1555,7 +1548,7 @@ class SaliencyCheck(Validator):
             threshold: Threshold for overlap between topics in document and summary.
         """
 
-        super().__init__(document_store=document_store, on_fail=on_fail, **kwargs)
+        super().__init__(on_fail=on_fail, **kwargs)
 
         if llm_callable is not None and inspect.iscoroutinefunction(llm_callable):
             raise ValueError(
@@ -1670,10 +1663,9 @@ class QARelevanceLLMEval(Validator):
         self,
         llm_callable: Optional[Callable] = None,
         on_fail: Optional[Callable] = None,
-        document_store: Optional[DocumentStoreBase] = None,
         **kwargs,
     ):
-        super().__init__(document_store=document_store, on_fail=on_fail, **kwargs)
+        super().__init__(on_fail=on_fail, **kwargs)
 
         if llm_callable is not None and inspect.iscoroutinefunction(llm_callable):
             raise ValueError(
