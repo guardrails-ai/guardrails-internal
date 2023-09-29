@@ -79,8 +79,6 @@ class ValidatorServiceBase:
         )
         validation_logs.validator_logs.append(validator_logs)
 
-        print("validator.validate: ", validator.validate)
-        print("calling validator.validate with: ", value, metadata)
         result = validator.validate(value, metadata)
         if result is None:
             result = PassResult()

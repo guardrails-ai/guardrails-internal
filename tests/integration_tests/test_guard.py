@@ -682,13 +682,8 @@ def test_guard_with_tracer(mocker):
     assert guard_history[0].output == string.LLM_OUTPUT
 
     # Assert tracer was used
-    print(
-        "start_as_current_span_spy.call_count: ", start_as_current_span_spy.call_count
-    )
     assert start_as_current_span_spy.call_count == 1
-    print("get_current_span_spy.call_count: ", get_current_span_spy.call_count)
     assert get_current_span_spy.call_count == 1
-    print("add_event_spy.call_count: ", add_event_spy.call_count)
     assert add_event_spy.call_count == 1
 
     # TODO: Add a validator that throws to test this
