@@ -7,6 +7,8 @@ from typing import Any, Optional
 from guardrails.classes.validation_result import Filter, Refrain
 from guardrails.stores.context import ContextStore, Tracer
 from guardrails.utils.logs_utils import FieldValidationLogs, ReAsk, ValidatorLogs
+from guardrails.utils.casting_utils import to_string
+
 
 
 def get_result_type(before_value: Any, after_value: Any, outcome: str):
@@ -99,8 +101,8 @@ def trace_validator_result(
             "result": result,
             "result_type": result_type,
             # TODO: to_string these
-            "input": value_before_validation,
-            "output": value_after_validation,
+            "input": to_string(value_before_validation) or '',
+            "output": to_string(value_after_validation) or '',
             **kwargs,
         },
     )
@@ -159,25 +161,44 @@ def trace_validator(
 
 def trace(name: str, tracer: Optional[Tracer] = None):
     def trace_wrapper(fn):
-        _tracer = get_tracer(tracer)
 
         @wraps(fn)
-        def with_trace(*args, **kwargs):
-            with _tracer.start_as_current_span(name) as trace_span:
-                try:
-                    # TODO: Capture args and kwargs as attributes?
-                    return fn(*args, **kwargs)
-                except Exception as e:
-                    trace_span.set_status(status=get_error_code(), description=str(e))
-                    raise e
+        def to_trace_or_not_to_trace(*args, **kwargs):
+            _tracer = get_tracer(tracer)
+
+            if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
+                with _tracer.start_as_current_span(name) as trace_span:
+                    try:
+                        # TODO: Capture args and kwargs as attributes?
+                        response = fn(*args, **kwargs)
+                        return response
+                    except Exception as e:
+                        trace_span.set_status(status=get_error_code(), description=str(e))
+                        raise e   
+            else:
+                return fn(*args, **kwargs)
+        return to_trace_or_not_to_trace
+
+    return trace_wrapper
+
+def async_trace(name: str, tracer: Optional[Tracer] = None):
+    async def trace_wrapper(fn):
 
         @wraps(fn)
-        def without_a_trace(*args, **kwargs):
-            return fn(*args, **kwargs)
+        async def to_trace_or_not_to_trace(*args, **kwargs):
+            _tracer = get_tracer(tracer)
 
-        if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
-            return with_trace
-        else:
-            return without_a_trace
+            if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
+                with _tracer.start_as_current_span(name) as trace_span:
+                    try:
+                        # TODO: Capture args and kwargs as attributes?
+                        response = await fn(*args, **kwargs)
+                        return response
+                    except Exception as e:
+                        trace_span.set_status(status=get_error_code(), description=str(e))
+                        raise e   
+            else:
+                return fn(*args, **kwargs)
+        return to_trace_or_not_to_trace
 
     return trace_wrapper

@@ -17,7 +17,7 @@ from guardrails.utils.reask_utils import (
     reasks_to_dict,
     sub_reasks_with_fixed_values,
 )
-from guardrails.utils.telemetry_utils import trace
+from guardrails.utils.telemetry_utils import trace, async_trace
 
 logger = logging.getLogger(__name__)
 actions_logger = logging.getLogger(f"{__name__}.actions")
@@ -571,7 +571,7 @@ class AsyncRunner(Runner):
 
             return self.guard_history
 
-    @trace(name="step")
+    @async_trace(name="step")
     async def async_step(
         self,
         index: int,
@@ -656,7 +656,7 @@ class AsyncRunner(Runner):
 
             return validated_output or parsed_output, reasks
 
-    @trace(name="call")
+    @async_trace(name="call")
     async def async_call(
         self,
         index: int,
