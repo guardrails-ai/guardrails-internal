@@ -76,6 +76,7 @@ class ValidatorServiceBase:
         validator_logs = ValidatorLogs(
             validator_name=validator_class_name,
             value_before_validation=value,
+            registered_name=validator.rail_alias,
         )
         validation_logs.validator_logs.append(validator_logs)
 

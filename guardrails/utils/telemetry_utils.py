@@ -76,7 +76,7 @@ def trace_validator_result(
         validation_result,
         value_after_validation,
     ) = attrgetter(
-        "validator_name",
+        "registered_name",
         "value_before_validation",
         "validation_result",
         "value_after_validation",
@@ -98,6 +98,9 @@ def trace_validator_result(
             "attempt_number": attempt_number,
             "result": result,
             "result_type": result_type,
+            # TODO: to_string these
+            "input": value_before_validation,
+            "output": value_after_validation,
             **kwargs,
         },
     )

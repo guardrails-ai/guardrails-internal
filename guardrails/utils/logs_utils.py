@@ -28,6 +28,7 @@ class ValidatorLogs(ArbitraryModel):
     """Logs for a single validator."""
 
     validator_name: str
+    registered_name: str
     value_before_validation: Any
     validation_result: Optional[ValidationResult] = None
     value_after_validation: Optional[Any] = None
