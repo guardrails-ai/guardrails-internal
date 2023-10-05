@@ -2,7 +2,7 @@ import inspect
 import logging
 from functools import wraps
 from operator import attrgetter
-from typing import Any
+from typing import Any, Optional
 
 from guardrails.classes.validation_result import Filter, Refrain
 from guardrails.stores.context import ContextStore, Tracer
@@ -122,7 +122,9 @@ def trace_validation_result(
                 )
 
 
-def trace_validator(name: str = None, namespace: str = None, tracer: Tracer = None):
+def trace_validator(
+    name: str = None, namespace: str = None, tracer: Optional[Tracer] = None
+):
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
 
@@ -153,3 +155,29 @@ def trace_validator(name: str = None, namespace: str = None, tracer: Tracer = No
             return without_a_trace
 
     return trace_validator_wrapper
+
+
+def trace(name: str, tracer: Optional[Tracer] = None):
+    def trace_wrapper(fn):
+        _tracer = get_tracer(tracer)
+
+        @wraps(fn)
+        def with_trace(*args, **kwargs):
+            with _tracer.start_as_current_span(name) as trace_span:
+                try:
+                    # TODO: Capture args and kwargs as attributes?
+                    return fn(*args, **kwargs)
+                except Exception as e:
+                    trace_span.set_status(status=get_error_code(), description=str(e))
+                    raise e
+
+        @wraps(fn)
+        def without_a_trace(*args, **kwargs):
+            return fn(*args, **kwargs)
+
+        if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
+            return with_trace
+        else:
+            return without_a_trace
+
+    return trace_wrapper
