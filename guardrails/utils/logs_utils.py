@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -32,6 +33,8 @@ class ValidatorLogs(ArbitraryModel):
     value_before_validation: Any
     validation_result: Optional[ValidationResult] = None
     value_after_validation: Optional[Any] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
 
 
 class FieldValidationLogs(ArbitraryModel):

@@ -655,14 +655,14 @@ def test_pydantic_with_message_history_reask(mocker):
 
 def test_guard_with_tracer(mocker):
     """Test guard with a tracer specified."""
+    mock_tracer = MockTracer()
     mocker.patch("guardrails.llm_providers.OpenAICallable", new=MockOpenAICallable)
     mocker.patch("opentelemetry.trace", new=MockTrace)
-    start_as_current_span_spy = mocker.spy(MockTracer, "start_as_current_span")
+    start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
     get_current_span_spy = mocker.spy(MockTrace, "get_current_span")
     add_event_spy = mocker.spy(MockSpan, "add_event")
     set_status_spy = mocker.spy(MockSpan, "set_status")
 
-    mock_tracer = MockTracer()
 
     guard = Guard.from_rail_string(string.RAIL_SPEC_FOR_TRACE, tracer=mock_tracer)
     _, final_output = guard(
@@ -682,7 +682,10 @@ def test_guard_with_tracer(mocker):
     assert guard_history[0].output == string.LLM_OUTPUT
 
     # Assert tracer was used
-    assert start_as_current_span_spy.call_count == 1
+    assert start_as_current_span_spy.call_count == 3
+    start_as_current_span_spy.assert_any_call("step")
+    start_as_current_span_spy.assert_any_call("call")
+    start_as_current_span_spy.assert_any_call("length.validate")
     assert get_current_span_spy.call_count == 1
     assert add_event_spy.call_count == 1
 

@@ -17,7 +17,7 @@ from guardrails.utils.reask_utils import (
     reasks_to_dict,
     sub_reasks_with_fixed_values,
 )
-from guardrails.utils.telemetry_utils import trace, async_trace
+from guardrails.utils.telemetry_utils import async_trace, trace
 
 logger = logging.getLogger(__name__)
 actions_logger = logging.getLogger(f"{__name__}.actions")

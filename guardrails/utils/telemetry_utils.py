@@ -6,9 +6,8 @@ from typing import Any, Optional
 
 from guardrails.classes.validation_result import Filter, Refrain
 from guardrails.stores.context import ContextStore, Tracer
-from guardrails.utils.logs_utils import FieldValidationLogs, ReAsk, ValidatorLogs
 from guardrails.utils.casting_utils import to_string
-
+from guardrails.utils.logs_utils import FieldValidationLogs, ReAsk, ValidatorLogs
 
 
 def get_result_type(before_value: Any, after_value: Any, outcome: str):
@@ -101,13 +100,15 @@ def trace_validator_result(
             "result": result,
             "result_type": result_type,
             # TODO: to_string these
-            "input": to_string(value_before_validation) or '',
-            "output": to_string(value_after_validation) or '',
+            "input": to_string(value_before_validation) or "",
+            "output": to_string(value_after_validation) or "",
             **kwargs,
         },
     )
 
 
+# FIXME: It's creating two of every event
+# Might be duplicate validator_logs?
 def trace_validation_result(
     validation_logs: FieldValidationLogs,
     attempt_number: int,
@@ -161,7 +162,6 @@ def trace_validator(
 
 def trace(name: str, tracer: Optional[Tracer] = None):
     def trace_wrapper(fn):
-
         @wraps(fn)
         def to_trace_or_not_to_trace(*args, **kwargs):
             _tracer = get_tracer(tracer)
@@ -173,17 +173,20 @@ def trace(name: str, tracer: Optional[Tracer] = None):
                         response = fn(*args, **kwargs)
                         return response
                     except Exception as e:
-                        trace_span.set_status(status=get_error_code(), description=str(e))
-                        raise e   
+                        trace_span.set_status(
+                            status=get_error_code(), description=str(e)
+                        )
+                        raise e
             else:
                 return fn(*args, **kwargs)
+
         return to_trace_or_not_to_trace
 
     return trace_wrapper
 
-def async_trace(name: str, tracer: Optional[Tracer] = None):
-    async def trace_wrapper(fn):
 
+def async_trace(name: str, tracer: Optional[Tracer] = None):
+    def trace_wrapper(fn):
         @wraps(fn)
         async def to_trace_or_not_to_trace(*args, **kwargs):
             _tracer = get_tracer(tracer)
@@ -195,10 +198,14 @@ def async_trace(name: str, tracer: Optional[Tracer] = None):
                         response = await fn(*args, **kwargs)
                         return response
                     except Exception as e:
-                        trace_span.set_status(status=get_error_code(), description=str(e))
-                        raise e   
+                        trace_span.set_status(
+                            status=get_error_code(), description=str(e)
+                        )
+                        raise e
             else:
-                return fn(*args, **kwargs)
+                response = await fn(*args, **kwargs)
+                return response
+
         return to_trace_or_not_to_trace
 
     return trace_wrapper

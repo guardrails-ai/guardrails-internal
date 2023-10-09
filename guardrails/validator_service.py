@@ -3,6 +3,7 @@ import itertools
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from guardrails.classes.validation_result import (
@@ -80,11 +81,15 @@ class ValidatorServiceBase:
         )
         validation_logs.validator_logs.append(validator_logs)
 
+        start_time = datetime.now()
         result = validator.validate(value, metadata)
+        end_time = datetime.now()
         if result is None:
             result = PassResult()
 
         validator_logs.validation_result = result
+        validator_logs.start_time = start_time
+        validator_logs.end_time = end_time
         return validator_logs
 
 
