@@ -1,5 +1,6 @@
 from contextlib import AbstractContextManager
 from types import TracebackType
+from typing import Optional
 
 
 class MockSpan(AbstractContextManager):
@@ -25,5 +26,10 @@ class MockTrace:
 
 
 class MockTracer:
+    span: MockSpan
+
+    def __init__ (self, span: Optional[MockSpan] = None):
+        self.span = span
+
     def start_as_current_span(self, *args, **kwargs):
-        return MockSpan()
+        return self.span or MockSpan()

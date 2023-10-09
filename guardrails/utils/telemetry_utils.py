@@ -2,12 +2,13 @@ import inspect
 import logging
 from functools import wraps
 from operator import attrgetter
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from guardrails.classes.validation_result import Filter, Refrain
 from guardrails.stores.context import ContextStore, Tracer
 from guardrails.utils.casting_utils import to_string
-from guardrails.utils.logs_utils import FieldValidationLogs, ReAsk, ValidatorLogs
+from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
+from guardrails.utils.reask_utils import ReAsk
 
 
 def get_result_type(before_value: Any, after_value: Any, outcome: str):
@@ -21,20 +22,6 @@ def get_result_type(before_value: Any, after_value: Any, outcome: str):
         return name
     except Exception:
         return type(after_value)
-
-
-def get_validator_name(fn, *args):
-    try:
-        arg_spec = inspect.getfullargspec(fn)
-        is_method = arg_spec[0][0] == "self"
-    except Exception:
-        is_method = False
-
-    if is_method:
-        name = args[0].__class__.__name__
-    else:
-        name = fn.__name__
-    return name
 
 
 def get_error_code() -> int:
@@ -54,7 +41,7 @@ def get_tracer(tracer: Tracer = None) -> Tracer:
     return _tracer
 
 
-def get_span(span=None):
+def get_span(span = None):
     if span is not None and hasattr(span, "add_event"):
         return span
     try:
@@ -76,34 +63,42 @@ def trace_validator_result(
         value_before_validation,
         validation_result,
         value_after_validation,
+        start_time,
+        end_time,
     ) = attrgetter(
         "registered_name",
         "value_before_validation",
         "validation_result",
         "value_after_validation",
+        "start_time",
+        "end_time",
     )(
         validator_log
     )
     result = (
         validation_result.outcome
         if hasattr(validation_result, "outcome")
+        and validation_result.outcome is not None
         else "unknown"
     )
     result_type = get_result_type(
         value_before_validation, value_after_validation, result
     )
+
+    event: Dict[str, str] = {
+        "validator_name": validator_name,
+        "attempt_number": attempt_number,
+        "result": result,
+        "result_type": result_type,
+        "input": to_string(value_before_validation),
+        "output": to_string(value_after_validation),
+        "start_time": start_time.isoformat() if start_time else None,
+        "end_time": end_time.isoformat() if end_time else None,
+        **kwargs,
+    }
     current_span.add_event(
         f"{validator_name}_result",
-        {
-            "validator_name": validator_name,
-            "attempt_number": attempt_number,
-            "result": result,
-            "result_type": result_type,
-            # TODO: to_string these
-            "input": to_string(value_before_validation) or "",
-            "output": to_string(value_after_validation) or "",
-            **kwargs,
-        },
+        {k: v for k, v in event.items() if v is not None},
     )
 
 
@@ -126,14 +121,13 @@ def trace_validation_result(
 
 
 def trace_validator(
-    name: str = None, namespace: str = None, tracer: Optional[Tracer] = None
+    validator_name: str, namespace: str = None, tracer: Optional[Tracer] = None
 ):
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
 
         @wraps(fn)
         def with_trace(*args, **kwargs):
-            validator_name = name if name is not None else get_validator_name(fn)
             span_name = (
                 f"{namespace}.{validator_name}.validate"
                 if namespace is not None

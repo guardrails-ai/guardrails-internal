@@ -268,7 +268,7 @@ class Validator:
 
         child_cls = type(self)
         child_cls.validate = trace_validator(
-            name=child_cls.rail_alias, namespace=child_cls.namespace
+            validator_name=child_cls.rail_alias, namespace=child_cls.namespace
         )(child_cls.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
