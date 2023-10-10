@@ -15,7 +15,9 @@ from guardrails.utils.telemetry_utils import (
     get_span,
     trace_validator_result,
     trace_validation_result,
-    trace_validator
+    trace_validator,
+    trace,
+    async_trace
 )
 from tests.integration_tests.test_assets.mocks.mock_trace import MockSpan, MockTracer, MockTrace
 
@@ -310,8 +312,8 @@ def test_trace_validator__with_trace(mocker):
 
     assert mock_get_tracer.call_count == 1
     assert start_as_current_span_spy.call_count == 1
+    start_as_current_span_spy.assert_called_once_with("mock-validator.validate")
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
-
 
 def test_trace_validator__with_trace_exception(mocker):
     from opentelemetry.trace import StatusCode
@@ -341,6 +343,7 @@ def test_trace_validator__with_trace_exception(mocker):
 
         assert mock_get_tracer.call_count == 1
         assert start_as_current_span_spy.call_count == 1
+        start_as_current_span_spy.assert_called_once_with("mock-validator.validate")
         mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
         set_status_spy.assert_called_once_with(
             status=StatusCode.ERROR,
@@ -365,10 +368,157 @@ def test_trace_validator__without_a_trace(mocker):
     assert mock_get_tracer.call_count == 1
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
-# TODO
-def test_trace():
-    pass
 
-# TODO
-def test_async_trace():
-    pass
+def test_trace__with_trace(mocker):
+    mock_tracer = MockTracer()
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = mock_tracer
+
+    start_as_current_span_spy = mocker.spy(mock_tracer, 'start_as_current_span')
+    
+    mock_fn = mocker.stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+
+    decorated_fn = trace(name="mock-method")(mock_fn)
+
+    decorated_fn("arg1", kwarg1="kwarg1")
+
+    assert mock_get_tracer.call_count == 1
+    assert start_as_current_span_spy.call_count == 1
+    start_as_current_span_spy.assert_called_once_with("mock-method")
+    mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
+
+def test_trace__with_trace_exception(mocker):
+    from opentelemetry.trace import StatusCode
+    
+    mock_span = MockSpan()
+    mock_tracer = MockTracer()
+    mock_tracer.span = mock_span
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = mock_tracer
+
+    start_as_current_span_spy = mocker.spy(mock_tracer, 'start_as_current_span')
+    
+    set_status_spy = mocker.spy(mock_span, 'set_status')
+    
+    mock_fn = mocker.stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+    mock_fn_error = Exception("Error!")
+    mock_fn.side_effect = mock_fn_error
+    
+    with pytest.raises(Exception) as error:
+        decorated_fn = trace(name="mock-method")(mock_fn)
+
+        decorated_fn("arg1", kwarg1="kwarg1")
+
+        assert mock_get_tracer.call_count == 1
+        assert start_as_current_span_spy.call_count == 1
+        start_as_current_span_spy.assert_called_once_with("mock-method")
+        mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
+        set_status_spy.assert_called_once_with(
+            status=StatusCode.ERROR,
+            description="Error!"
+        )
+        assert error == mock_fn_error
+
+def test_trace__without_a_trace(mocker):
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = None
+    
+    mock_fn = mocker.stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+
+    decorated_fn = trace(name="mock-method")(mock_fn)
+
+    decorated_fn("arg1", kwarg1="kwarg1")
+
+    assert mock_get_tracer.call_count == 1
+    mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
+
+
+@pytest.mark.asyncio
+async def test_async_trace__with_trace(mocker):
+    mock_tracer = MockTracer()
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = mock_tracer
+
+    start_as_current_span_spy = mocker.spy(mock_tracer, 'start_as_current_span')
+    
+    mock_fn = mocker.async_stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+
+    decorated_fn = async_trace(name="mock-method")(mock_fn)
+
+    await decorated_fn("arg1", kwarg1="kwarg1")
+
+    assert mock_get_tracer.call_count == 1
+    assert start_as_current_span_spy.call_count == 1
+    start_as_current_span_spy.assert_called_once_with("mock-method")
+    mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
+
+@pytest.mark.asyncio
+async def test_async_trace__with_trace_exception(mocker):
+    from opentelemetry.trace import StatusCode
+    
+    mock_span = MockSpan()
+    mock_tracer = MockTracer()
+    mock_tracer.span = mock_span
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = mock_tracer
+
+    start_as_current_span_spy = mocker.spy(mock_tracer, 'start_as_current_span')
+    
+    set_status_spy = mocker.spy(mock_span, 'set_status')
+    
+    mock_fn = mocker.async_stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+    mock_fn_error = Exception("Error!")
+    mock_fn.side_effect = mock_fn_error
+    
+    with pytest.raises(Exception) as error:
+        decorated_fn = async_trace(name="mock-method")(mock_fn)
+
+        await decorated_fn("arg1", kwarg1="kwarg1")
+
+        assert mock_get_tracer.call_count == 1
+        assert start_as_current_span_spy.call_count == 1
+        start_as_current_span_spy.assert_called_once_with("mock-method")
+        mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
+        set_status_spy.assert_called_once_with(
+            status=StatusCode.ERROR,
+            description="Error!"
+        )
+        assert error == mock_fn_error
+
+@pytest.mark.asyncio
+async def test_async_trace__without_a_trace(mocker):
+    mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
+    mock_get_tracer.return_value = None
+    
+    mock_fn = mocker.async_stub(name="mock_fn")
+    mock_fn.__name__ = "mock_fn"
+    mock_fn.__qualname__ = "mock_fn"
+    mock_fn.__annotations__ = {}
+    
+
+    decorated_fn = async_trace(name="mock-method")(mock_fn)
+
+    await decorated_fn("arg1", kwarg1="kwarg1")
+
+    assert mock_get_tracer.call_count == 1
+    mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
