@@ -79,6 +79,7 @@ class ValidatorServiceBase:
             value_before_validation=value,
             registered_name=validator.rail_alias,
         )
+        # VALIDATOR_LOG DUPLICATION
         validation_logs.validator_logs.append(validator_logs)
 
         start_time = datetime.now()
@@ -106,6 +107,7 @@ class SequentialValidatorService(ValidatorServiceBase):
             validator_logs = self.run_validator(
                 validation_logs, validator, value, metadata
             )
+            # VALIDATOR_LOG DUPLICATION
             validation_logs.validator_logs.append(validator_logs)
 
             result = validator_logs.validation_result
@@ -210,12 +212,14 @@ class AsyncValidatorService(ValidatorServiceBase, MultiprocMixin):
                     result = self.run_validator(
                         validation_logs, validator, value, metadata
                     )
+                    # VALIDATOR_LOG DUPLICATION
                     validators_logs.append(result)
 
             # wait for the parallel tasks to finish
             if parallel_tasks:
                 parallel_results = await asyncio.gather(*parallel_tasks)
                 validation_logs.validator_logs.extend(parallel_results)
+                # VALIDATOR_LOG DUPLICATION
                 validators_logs.extend(parallel_results)
 
             # process the results, handle failures

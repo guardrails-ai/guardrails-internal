@@ -109,12 +109,17 @@ def trace_validation_result(
     attempt_number: int,
     current_span=None,
 ):
+    # Duplicate logs are showing here
+    # print("validation_logs.validator_logs: ", validation_logs.validator_logs)
     _current_span = get_span(current_span)
     if _current_span is not None:
         for log in validation_logs.validator_logs:
+            # Duplicate logs are showing here
+            # print("calling trace_validator_result with: ", log, attempt_number)
             trace_validator_result(_current_span, log, attempt_number)
         if validation_logs.children:
             for child in validation_logs.children:
+                # print("calling trace_validation_result with child logs")
                 trace_validation_result(
                     validation_logs.children.get(child), attempt_number, _current_span
                 )
