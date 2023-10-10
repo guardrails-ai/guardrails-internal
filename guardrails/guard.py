@@ -95,8 +95,7 @@ class Guard:
             else os.environ.get("OPENAI_API_KEY")
         )
         self.description = description
-        if self._tracer is None and tracer is not None:
-            self._set_tracer(tracer)
+        self._set_tracer(tracer)
 
         api_key = os.environ.get("GUARDRAILS_API_KEY")
         if api_key is not None:

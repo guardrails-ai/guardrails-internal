@@ -19,7 +19,7 @@ from guardrails.utils.telemetry_utils import (
     trace,
     async_trace
 )
-from tests.integration_tests.test_assets.mocks.mock_trace import MockSpan, MockTracer, MockTrace
+from tests.mocks.mock_trace import MockSpan, MockTracer, MockTrace
 
 @pytest.mark.parametrize(
     "before_value,after_value,outcome,expected_value",

@@ -22,7 +22,7 @@ from .mock_llm_outputs import (
     entity_extraction,
 )
 from .test_assets import pydantic, string
-from .test_assets.mocks.mock_trace import MockSpan, MockTrace, MockTracer
+from tests.mocks.mock_trace import MockSpan, MockTrace, MockTracer
 
 
 def guard_initializer(
