@@ -6,10 +6,10 @@ from typing import Optional
 class MockSpan(AbstractContextManager):
     def __exit__(
         self,
-        __exc_type: type[BaseException] | None,
-        __exc_value: BaseException | None,
-        __traceback: TracebackType | None,
-    ) -> bool | None:
+        __exc_type: Optional[type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[TracebackType],
+    ) -> Optional[bool]:
         return super().__exit__(__exc_type, __exc_value, __traceback)
 
     def add_event(self, *args, **kwargs):
