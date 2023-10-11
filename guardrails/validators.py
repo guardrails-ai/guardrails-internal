@@ -4,7 +4,6 @@ The name with which a validator is registered is the name that is used
 in the `RAIL` spec to specify formatters.
 """
 import ast
-import contextvars
 import inspect
 import itertools
 import logging
@@ -1175,15 +1174,9 @@ class ExtractedSummarySentencesMatch(Validator):
             )
         filepaths = metadata["filepaths"]
 
-        kwargs = {}
-        context_copy = contextvars.copy_context()
-        for key, context_var in context_copy.items():
-            if key.name == "kwargs" and isinstance(kwargs, dict):
-                kwargs = context_var
-                break
-
-        api_key = kwargs.get("api_key")
-        api_base = kwargs.get("api_base")
+        context_store = ContextStore()
+        api_key = context_store.get_call_kwarg("api_key")
+        api_base = context_store.get_call_kwarg("api_base")
 
         store = self._instantiate_store(metadata, api_key, api_base)
 
@@ -2237,15 +2230,9 @@ class ProvenanceV1(Validator):
         return PassResult(metadata=metadata)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
-        kwargs = {}
-        context_copy = contextvars.copy_context()
-        for key, context_var in context_copy.items():
-            if key.name == "kwargs" and isinstance(kwargs, dict):
-                kwargs = context_var
-                break
-
-        api_key = kwargs.get("api_key")
-        api_base = kwargs.get("api_base")
+        context_store = ContextStore()
+        api_key = context_store.get_call_kwarg("api_key")
+        api_base = context_store.get_call_kwarg("api_base")
 
         # Set the OpenAI API key
         if os.getenv("OPENAI_API_KEY"):  # Check if set in environment

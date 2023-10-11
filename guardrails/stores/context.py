@@ -1,5 +1,5 @@
 from contextvars import ContextVar, Token
-from typing import Dict, Literal, TypeVar, Union
+from typing import Any, Dict, Literal, TypeVar, Union
 from uuid import uuid4
 
 try:
@@ -22,6 +22,7 @@ _T = TypeVar("_T")
 
 TRACER: Literal["tracer"] = "tracer"
 DOCUMENT_STORE: Literal["document_store"] = "document_store"
+CALL_KWARGS: Literal["call_kwargs"] = "call_kwargs"
 
 
 class ContextStore:
@@ -31,6 +32,7 @@ class ContextStore:
     _context_tokens: Dict[str, Token] = None
     _document_store_key: str = None
     _tracer_key: str = None
+    _call_kwargs_key: str = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -40,6 +42,7 @@ class ContextStore:
             cls._id = str(uuid4())
             cls._tracer_key = f"{cls._id}.{TRACER}"
             cls._document_store_key = f"{cls._id}.{DOCUMENT_STORE}"
+            cls._call_kwargs_key = f"{cls._id}.{CALL_KWARGS}"
         return cls._instance
 
     def set_document_store(
@@ -55,6 +58,16 @@ class ContextStore:
 
     def get_tracer(self) -> Union[Tracer, None]:
         return self.get_context_var(self._tracer_key)
+
+    def set_call_kwargs(self, kwargs: Dict[str, Any]) -> None:
+        self.set_context_var(self._call_kwargs_key, kwargs)
+
+    def get_call_kwargs(self) -> Dict[str, Any]:
+        return self.get_context_var(self._call_kwargs_key) or {}
+
+    def get_call_kwarg(self, kwarg_key: str) -> Union[Any, None]:
+        kwargs = self.get_call_kwargs()
+        return kwargs.get(kwarg_key)
 
     def set_context_var(self, key: str, value: _T) -> None:
         context_var = ContextVar(key)

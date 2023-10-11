@@ -28,7 +28,7 @@ class MockTrace:
 class MockTracer:
     span: MockSpan
 
-    def __init__ (self, span: Optional[MockSpan] = None):
+    def __init__(self, span: Optional[MockSpan] = None):
         self.span = span
 
     def start_as_current_span(self, *args, **kwargs):

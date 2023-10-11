@@ -1,5 +1,4 @@
 import asyncio
-import contextvars
 import logging
 import os
 import random
@@ -426,8 +425,8 @@ class Guard:
         if prompt_params is None:
             prompt_params = {}
 
-        context = contextvars.ContextVar("kwargs")
-        context.set(kwargs)
+        context_store = ContextStore()
+        context_store.set_context_var("call-kwargs", kwargs)
 
         self.configure(num_reasks)
         if self.num_reasks is None:
@@ -670,11 +669,8 @@ class Guard:
         metadata = metadata or {}
         prompt_params = prompt_params or {}
 
-        context = contextvars.ContextVar("kwargs")
-        context.set(kwargs)
-        # TODO: test this
-        # context_store = ContextStore()
-        # context_store.set_context_var("kwargs", kwargs)
+        context_store = ContextStore()
+        context_store.set_context_var("call-kwargs", kwargs)
 
         if self._api_client is not None and llm_api_is_manifest(llm_api) is not True:
             return self.validate(

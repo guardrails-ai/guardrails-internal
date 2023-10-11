@@ -1,4 +1,3 @@
-import inspect
 import logging
 from functools import wraps
 from operator import attrgetter
@@ -41,7 +40,7 @@ def get_tracer(tracer: Tracer = None) -> Tracer:
     return _tracer
 
 
-def get_span(span = None):
+def get_span(span=None):
     if span is not None and hasattr(span, "add_event"):
         return span
     try:

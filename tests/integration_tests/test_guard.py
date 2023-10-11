@@ -15,6 +15,7 @@ from tests.integration_tests.test_assets.fixtures import (  # noqa
     fixture_rail_spec,
     fixture_validated_output,
 )
+from tests.mocks.mock_trace import MockSpan, MockTrace, MockTracer
 
 from .mock_llm_outputs import (
     MockOpenAICallable,
@@ -22,7 +23,6 @@ from .mock_llm_outputs import (
     entity_extraction,
 )
 from .test_assets import pydantic, string
-from tests.mocks.mock_trace import MockSpan, MockTrace, MockTracer
 
 
 def guard_initializer(
@@ -662,7 +662,6 @@ def test_guard_with_tracer(mocker):
     get_current_span_spy = mocker.spy(MockTrace, "get_current_span")
     add_event_spy = mocker.spy(MockSpan, "add_event")
     set_status_spy = mocker.spy(MockSpan, "set_status")
-
 
     guard = Guard.from_rail_string(string.RAIL_SPEC_FOR_TRACE, tracer=mock_tracer)
     _, final_output = guard(
