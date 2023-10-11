@@ -1,9 +1,9 @@
 import asyncio
-from contextvars import Context
 import logging
 import os
 import random
 import string
+from contextvars import Context
 from typing import (
     Any,
     Awaitable,
@@ -418,6 +418,7 @@ class Guard:
         Returns:
             The raw text output from the LLM and the validated output.
         """
+
         def __call(
             self,
             llm_api: Union[Callable, Callable[[Any], Awaitable[Any]]],
@@ -448,7 +449,10 @@ class Guard:
                     "This should never happen."
                 )
 
-            if self._api_client is not None and llm_api_is_manifest(llm_api) is not True:
+            if (
+                self._api_client is not None
+                and llm_api_is_manifest(llm_api) is not True
+            ):
                 # TODO: Run locally if llm_api is Manifest
                 return self.validate(
                     llm_api=llm_api,
@@ -485,6 +489,7 @@ class Guard:
                 *args,
                 **kwargs,
             )
+
         guard_context = Context()
         return guard_context.run(
             __call,
@@ -683,6 +688,7 @@ class Guard:
         Returns:
             The validated response.
         """
+
         def __parse(
             self,
             llm_output: str,
@@ -711,7 +717,10 @@ class Guard:
             set_call_kwargs(kwargs)
             set_tracer(self._tracer)
 
-            if self._api_client is not None and llm_api_is_manifest(llm_api) is not True:
+            if (
+                self._api_client is not None
+                and llm_api_is_manifest(llm_api) is not True
+            ):
                 return self.validate(
                     llm_output=llm_output,
                     llm_api=llm_api,
@@ -745,6 +754,7 @@ class Guard:
                 *args,
                 **kwargs,
             )
+
         guard_context = Context()
         return guard_context.run(
             __parse,

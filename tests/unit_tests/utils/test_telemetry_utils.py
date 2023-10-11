@@ -1,6 +1,5 @@
 import builtins
 import logging
-import traceback
 from datetime import datetime
 
 import pytest

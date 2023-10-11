@@ -24,10 +24,7 @@ from guardrails.classes.validation_result import (
     Refrain,
     ValidationResult,
 )
-from guardrails.stores.context import (
-    get_call_kwarg,
-    get_document_store
-)
+from guardrails.stores.context import get_call_kwarg, get_document_store
 from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
