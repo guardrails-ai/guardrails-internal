@@ -1,12 +1,12 @@
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Optional
+from typing import Optional, Type
 
 
 class MockSpan(AbstractContextManager):
     def __exit__(
         self,
-        __exc_type: Optional[type[BaseException]],
+        __exc_type: Optional[Type[BaseException]],
         __exc_value: Optional[BaseException],
         __traceback: Optional[TracebackType],
     ) -> Optional[bool]:

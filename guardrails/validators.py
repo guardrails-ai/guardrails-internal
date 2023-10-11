@@ -24,7 +24,10 @@ from guardrails.classes.validation_result import (
     Refrain,
     ValidationResult,
 )
-from guardrails.stores.context import ContextStore
+from guardrails.stores.context import (
+    get_call_kwarg,
+    get_document_store
+)
 from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
@@ -927,7 +930,7 @@ class SimilarToDocument(Validator):
         self._document_embedding = np.array(embedding)
         self._model = model
         self._threshold = float(threshold)
-        self.document_store = document_store or ContextStore().get_document_store()
+        self.document_store = document_store or get_document_store()
 
     @staticmethod
     def cosine_similarity(a: "np.ndarray", b: "np.ndarray") -> float:
@@ -1137,7 +1140,7 @@ class ExtractedSummarySentencesMatch(Validator):
         # TODO(shreya): Pass embedding_model, vector_db, document_store from spec
 
         self._threshold = float(threshold)
-        self.store = document_store or ContextStore().get_document_store()
+        self.store = document_store or get_document_store()
 
     @staticmethod
     def _instantiate_store(
@@ -1174,9 +1177,8 @@ class ExtractedSummarySentencesMatch(Validator):
             )
         filepaths = metadata["filepaths"]
 
-        context_store = ContextStore()
-        api_key = context_store.get_call_kwarg("api_key")
-        api_base = context_store.get_call_kwarg("api_base")
+        api_key = get_call_kwarg("api_key")
+        api_base = get_call_kwarg("api_base")
 
         store = self._instantiate_store(metadata, api_key, api_base)
 
@@ -2230,9 +2232,8 @@ class ProvenanceV1(Validator):
         return PassResult(metadata=metadata)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
-        context_store = ContextStore()
-        api_key = context_store.get_call_kwarg("api_key")
-        api_base = context_store.get_call_kwarg("api_base")
+        api_key = get_call_kwarg("api_key")
+        api_base = get_call_kwarg("api_base")
 
         # Set the OpenAI API key
         if os.getenv("OPENAI_API_KEY"):  # Check if set in environment

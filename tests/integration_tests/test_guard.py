@@ -8,7 +8,6 @@ from pydantic import BaseModel
 import guardrails as gd
 from guardrails.classes.validation_result import FailResult
 from guardrails.guard import Guard
-from guardrails.stores.context import ContextStore
 from guardrails.utils.reask_utils import FieldReAsk
 from tests.integration_tests.test_assets.fixtures import (  # noqa
     fixture_llm_output,
@@ -690,5 +689,3 @@ def test_guard_with_tracer(mocker):
 
     # TODO: Add a validator that throws to test this
     assert set_status_spy.call_count == 0
-
-    ContextStore().reset()
