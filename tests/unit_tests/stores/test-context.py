@@ -102,5 +102,4 @@ async def test_context_store_closure():
             assert task_context_var == "task_two"
         return await task_two_context.run(__task_two)
 
-    # loop = asyncio.get_running_loop()
     await asyncio.gather(task_one(), task_two())
