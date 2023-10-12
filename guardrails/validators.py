@@ -267,7 +267,10 @@ class Validator:
 
         child_cls = type(self)
         child_cls.validate = trace_validator(
-            validator_name=child_cls.rail_alias, namespace=child_cls.namespace
+            validator_name=child_cls.rail_alias,
+            namespace=child_cls.namespace,
+            on_fail_descriptor=self.on_fail_descriptor,
+            **kwargs
         )(child_cls.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:

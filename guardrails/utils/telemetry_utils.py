@@ -10,6 +10,13 @@ from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import ReAsk
 
 
+try:
+    from opentelemetry.trace import Span
+except ImportError:
+    class Span:
+        pass
+
+
 def get_result_type(before_value: Any, after_value: Any, outcome: str):
     try:
         if isinstance(after_value, (Filter, Refrain, ReAsk)):
@@ -125,7 +132,11 @@ def trace_validation_result(
 
 
 def trace_validator(
-    validator_name: str, namespace: str = None, tracer: Optional[Tracer] = None
+    validator_name: str,
+    namespace: str = None,
+    on_fail_descriptor: str = None,
+    tracer: Optional[Tracer] = None,
+    **init_kwargs
 ):
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
@@ -139,6 +150,8 @@ def trace_validator(
             )
             with _tracer.start_as_current_span(span_name) as validator_span:
                 try:
+                    validator_span.set_attribute("on_fail_descriptor", on_fail_descriptor)
+                    validator_span.set_attribute("args", to_string({k: to_string(v) for k, v in init_kwargs.items()}))
                     return fn(*args, **kwargs)
                 except Exception as e:
                     validator_span.set_status(
