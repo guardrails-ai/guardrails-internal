@@ -71,6 +71,7 @@ def trace_validator_result(
         value_after_validation,
         start_time,
         end_time,
+        instance_id,
     ) = attrgetter(
         "registered_name",
         "value_before_validation",
@@ -78,6 +79,7 @@ def trace_validator_result(
         "value_after_validation",
         "start_time",
         "end_time",
+        "instance_id",
     )(
         validator_log
     )
@@ -100,6 +102,7 @@ def trace_validator_result(
         "output": to_string(value_after_validation),
         "start_time": start_time.isoformat() if start_time else None,
         "end_time": end_time.isoformat() if end_time else None,
+        "instance_id": instance_id,
         **kwargs,
     }
     current_span.add_event(
@@ -133,6 +136,7 @@ def trace_validation_result(
 
 def trace_validator(
     validator_name: str,
+    id: int,
     namespace: str = None,
     on_fail_descriptor: str = None,
     tracer: Optional[Tracer] = None,
@@ -152,6 +156,7 @@ def trace_validator(
                 try:
                     validator_span.set_attribute("on_fail_descriptor", on_fail_descriptor)
                     validator_span.set_attribute("args", to_string({k: to_string(v) for k, v in init_kwargs.items()}))
+                    validator_span.set_attribute("instance_id", to_string(id))
                     return fn(*args, **kwargs)
                 except Exception as e:
                     validator_span.set_status(

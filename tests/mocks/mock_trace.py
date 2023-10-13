@@ -18,6 +18,9 @@ class MockSpan(AbstractContextManager):
     def set_status(self, *args, **kwargs):
         pass
 
+    def set_attribute(self, *args, **kwargs):
+        pass
+
 
 class MockTrace:
     @staticmethod

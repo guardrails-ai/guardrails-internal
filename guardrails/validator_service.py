@@ -14,6 +14,7 @@ from guardrails.classes.validation_result import (
     ValidatorError,
 )
 from guardrails.datatypes import FieldValidation
+from guardrails.utils.casting_utils import to_string
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import FieldReAsk, ReAsk
 from guardrails.validators import Validator
@@ -91,6 +92,7 @@ class ValidatorServiceBase:
         validator_logs.validation_result = result
         validator_logs.start_time = start_time
         validator_logs.end_time = end_time
+        validator_logs.instance_id = to_string(id(validator))
         return validator_logs
 
 
