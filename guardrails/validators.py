@@ -271,7 +271,7 @@ class Validator:
             id=id(self),
             namespace=child_cls.namespace,
             on_fail_descriptor=self.on_fail_descriptor,
-            **kwargs
+            **kwargs,
         )(child_cls.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:

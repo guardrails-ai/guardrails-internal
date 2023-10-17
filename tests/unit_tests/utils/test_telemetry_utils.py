@@ -305,7 +305,7 @@ def test_trace_validator__with_trace(mocker):
     mock_fn.__qualname__ = "mock_fn"
     mock_fn.__annotations__ = {}
 
-    decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+    decorated_fn = trace_validator(validator_name="mock-validator", id=1234)(mock_fn)
 
     decorated_fn("arg1", kwarg1="kwarg1")
 
@@ -337,7 +337,9 @@ def test_trace_validator__with_trace_exception(mocker):
     mock_fn.side_effect = mock_fn_error
 
     with pytest.raises(Exception) as error:
-        decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+        decorated_fn = trace_validator(validator_name="mock-validator", id=1234)(
+            mock_fn
+        )
 
         decorated_fn("arg1", kwarg1="kwarg1")
 
@@ -360,7 +362,7 @@ def test_trace_validator__without_a_trace(mocker):
     mock_fn.__qualname__ = "mock_fn"
     mock_fn.__annotations__ = {}
 
-    decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+    decorated_fn = trace_validator(validator_name="mock-validator", id=1234)(mock_fn)
 
     decorated_fn("arg1", kwarg1="kwarg1")
 

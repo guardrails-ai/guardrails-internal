@@ -9,10 +9,10 @@ from guardrails.utils.casting_utils import to_string
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import ReAsk
 
-
 try:
     from opentelemetry.trace import Span
 except ImportError:
+
     class Span:
         pass
 
@@ -140,7 +140,7 @@ def trace_validator(
     namespace: str = None,
     on_fail_descriptor: str = None,
     tracer: Optional[Tracer] = None,
-    **init_kwargs
+    **init_kwargs,
 ):
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
@@ -154,9 +154,19 @@ def trace_validator(
             )
             with _tracer.start_as_current_span(span_name) as validator_span:
                 try:
-                    validator_span.set_attribute("on_fail_descriptor", on_fail_descriptor)
-                    validator_span.set_attribute("args", to_string({k: to_string(v) for k, v in init_kwargs.items()}))
+                    validator_span.set_attribute(
+                        "on_fail_descriptor", on_fail_descriptor
+                    )
+                    validator_span.set_attribute(
+                        "args",
+                        to_string({k: to_string(v) for k, v in init_kwargs.items()}),
+                    )
                     validator_span.set_attribute("instance_id", to_string(id))
+
+                    # NOTE: Update if Validator.validate method signature ever changes
+                    if args is not None and len(args) > 1:
+                        validator_span.set_attribute("input", to_string(args[1]))
+
                     return fn(*args, **kwargs)
                 except Exception as e:
                     validator_span.set_status(
