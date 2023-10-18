@@ -1,6 +1,5 @@
 import builtins
 import logging
-import traceback
 from datetime import datetime
 
 import pytest
@@ -12,7 +11,7 @@ from guardrails.classes.validation_result import (
     Refrain,
     ValidationResult,
 )
-from guardrails.stores.context import ContextStore
+from guardrails.stores.context import set_tracer
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import (
     FieldReAsk,
@@ -126,12 +125,12 @@ def test_get_tracer__injected():
 
 def test_get_tracer__context_store():
     mock_tracer = MockTracer()
-    context_store = ContextStore()
-    context_store.set_tracer(mock_tracer)
+    set_tracer(mock_tracer)
     actual_tracer = get_tracer()
 
     assert actual_tracer == mock_tracer
-    context_store.reset()
+
+    set_tracer(None)
 
 
 def test_get_tracer__none():
@@ -168,12 +167,12 @@ def test_get_span__none(mocker):
 
     import_mocker = mocker.patch.object(builtins, "__import__", mock_import)
 
-    print_exception_spy = mocker.spy(traceback, "print_exception")
+    print_spy = mocker.spy(builtins, "print")
 
     actual_tracer = get_span()
 
     assert actual_tracer is None
-    print_exception_spy.assert_called_once_with(import_error)
+    print_spy.assert_called_once_with(import_error)
     mocker.stop(import_mocker)
 
 

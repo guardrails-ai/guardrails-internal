@@ -4,7 +4,8 @@ from operator import attrgetter
 from typing import Any, Dict, Optional
 
 from guardrails.classes.validation_result import Filter, Refrain
-from guardrails.stores.context import ContextStore, Tracer
+from guardrails.stores.context import Tracer
+from guardrails.stores.context import get_tracer as get_context_tracer
 from guardrails.utils.casting_utils import to_string
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import ReAsk
@@ -42,8 +43,7 @@ def get_error_code() -> int:
 
 def get_tracer(tracer: Tracer = None) -> Tracer:
     # TODO: Do we ever need to consider supporting non-otel tracers?
-    context_store = ContextStore()
-    _tracer = tracer if tracer is not None else context_store.get_tracer()
+    _tracer = tracer if tracer is not None else get_context_tracer()
     return _tracer
 
 
@@ -55,9 +55,7 @@ def get_span(span=None):
 
         return trace.get_current_span()
     except Exception as e:
-        import traceback
-
-        traceback.print_exception(e)
+        print(e)
         return None
 
 
