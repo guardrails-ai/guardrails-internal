@@ -38,7 +38,7 @@ from guardrails.prompt import Instructions, Prompt
 from guardrails.rail import Rail
 from guardrails.run import AsyncRunner, Runner
 from guardrails.schema import Schema
-from guardrails.stores.context import Tracer, set_call_kwargs, set_tracer
+from guardrails.stores.context import Tracer, get_tracer_context, set_call_kwargs, set_tracer, set_tracer_context
 from guardrails.utils.logs_utils import GuardHistory, GuardLogs, GuardState
 from guardrails.utils.parsing_utils import get_template_variables
 from guardrails.utils.reask_utils import FieldReAsk, sub_reasks_with_fixed_values
@@ -68,6 +68,7 @@ class Guard:
 
     _api_client: GuardrailsApiClient = None
     _tracer = None
+    _tracer_context = None
 
     def __init__(
         self,
@@ -198,6 +199,8 @@ class Guard:
     def _set_tracer(self, tracer: Tracer = None) -> None:
         self._tracer = tracer
         set_tracer(tracer)
+        set_tracer_context()
+        self._tracer_context = get_tracer_context()
 
     @classmethod
     def from_rail(
@@ -441,6 +444,7 @@ class Guard:
 
             set_call_kwargs(kwargs)
             set_tracer(self._tracer)
+            set_tracer_context(self._tracer_context)
 
             self.configure(num_reasks)
             if self.num_reasks is None:
@@ -716,6 +720,7 @@ class Guard:
 
             set_call_kwargs(kwargs)
             set_tracer(self._tracer)
+            set_tracer_context(self._tracer_context)
 
             if (
                 self._api_client is not None

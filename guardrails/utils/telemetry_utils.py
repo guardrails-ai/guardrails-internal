@@ -5,13 +5,14 @@ from typing import Any, Dict, Optional
 
 from guardrails.classes.validation_result import Filter, Refrain
 from guardrails.stores.context import Tracer
-from guardrails.stores.context import get_tracer as get_context_tracer
+from guardrails.stores.context import get_tracer as get_context_tracer, get_tracer_context
 from guardrails.utils.casting_utils import to_string
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.utils.reask_utils import ReAsk
 
 try:
     from opentelemetry.trace import Span
+    from opentelemetry import context
 except ImportError:
 
     class Span:
@@ -53,7 +54,9 @@ def get_span(span=None):
     try:
         from opentelemetry import trace
 
-        return trace.get_current_span()
+        current_context = context.get_current() or get_tracer_context()
+        current_span = trace.get_current_span(current_context)
+        return current_span
     except Exception as e:
         print(e)
         return None
@@ -140,6 +143,7 @@ def trace_validator(
     tracer: Optional[Tracer] = None,
     **init_kwargs,
 ):
+    # print(f"validator {validator_name} was instantiated with id {id}")
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
 
@@ -150,7 +154,8 @@ def trace_validator(
                 if namespace is not None
                 else f"{validator_name}.validate"
             )
-            with _tracer.start_as_current_span(span_name) as validator_span:
+            trace_context = context.get_current() or get_tracer_context()
+            with _tracer.start_as_current_span(span_name, trace_context) as validator_span:
                 try:
                     validator_span.set_attribute(
                         "on_fail_descriptor", on_fail_descriptor
@@ -164,7 +169,11 @@ def trace_validator(
                     # NOTE: Update if Validator.validate method signature ever changes
                     if args is not None and len(args) > 1:
                         validator_span.set_attribute("input", to_string(args[1]))
-
+                    
+                    # print(f"============ START trace_validator.with_trace ============")
+                    # print(f"{validator_name}.validate with id {id} was called: ")
+                    # print(fn)
+                    # print(f"============ END trace_validator.with_trace ============")
                     return fn(*args, **kwargs)
                 except Exception as e:
                     validator_span.set_status(
@@ -191,7 +200,8 @@ def trace(name: str, tracer: Optional[Tracer] = None):
             _tracer = get_tracer(tracer)
 
             if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
-                with _tracer.start_as_current_span(name) as trace_span:
+                trace_context = context.get_current() or get_tracer_context()
+                with _tracer.start_as_current_span(name, trace_context) as trace_span:
                     try:
                         # TODO: Capture args and kwargs as attributes?
                         response = fn(*args, **kwargs)
@@ -216,7 +226,8 @@ def async_trace(name: str, tracer: Optional[Tracer] = None):
             _tracer = get_tracer(tracer)
 
             if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
-                with _tracer.start_as_current_span(name) as trace_span:
+                trace_context = context.get_current() or get_tracer_context()
+                with _tracer.start_as_current_span(name, trace_context) as trace_span:
                     try:
                         # TODO: Capture args and kwargs as attributes?
                         response = await fn(*args, **kwargs)
