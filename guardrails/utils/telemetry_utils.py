@@ -87,6 +87,11 @@ def trace_validator_result(
         and validation_result.outcome is not None
         else "unknown"
     )
+    tokens = (
+        validation_result.tokens_consumed
+        if hasattr(validation_result, "tokens_consumed")
+        else None
+    )
     result_type = get_result_type(
         value_before_validation, value_after_validation, result
     )
@@ -101,6 +106,7 @@ def trace_validator_result(
         "start_time": start_time.isoformat() if start_time else None,
         "end_time": end_time.isoformat() if end_time else None,
         "instance_id": instance_id,
+        "tokens": tokens,
         **kwargs,
     }
     current_span.add_event(

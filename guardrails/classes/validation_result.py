@@ -7,6 +7,7 @@ from pydantic import Field
 class ValidationResult(pydantic.BaseModel):
     outcome: str
     metadata: Optional[Dict[str, Any]] = None
+    tokens_consumed: Optional[int] = None
 
 
 class PassResult(ValidationResult):

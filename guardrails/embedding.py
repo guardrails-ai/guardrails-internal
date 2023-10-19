@@ -98,6 +98,7 @@ class EmbeddingBase(ABC):
 
 
 class OpenAIEmbedding(EmbeddingBase):
+    _token_consumption: int = 0
     def __init__(
         self,
         model: Optional[str] = "text-embedding-ada-002",
@@ -142,6 +143,8 @@ class OpenAIEmbedding(EmbeddingBase):
         resp = openai.Embedding.create(
             api_key=api_key, model=self._model, input=texts, api_base=self.api_base
         )
+        token_count = resp["usage"]["total_tokens"] or 0
+        self._token_consumption = token_count + self._token_consumption
         return [r["embedding"] for r in resp["data"]]
 
     @property

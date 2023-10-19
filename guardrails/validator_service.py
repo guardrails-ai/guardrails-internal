@@ -94,7 +94,7 @@ class ValidatorServiceBase:
         validator_logs.end_time = end_time
         # If we ever re-use validator instances across multiple properties,
         #   this will have to change.
-        validator_logs.instance_id = to_string(id(validator))
+        validator_logs.instance_id = id(validator)
         return validator_logs
 
 

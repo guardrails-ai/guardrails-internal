@@ -27,6 +27,7 @@ from guardrails.classes.validation_result import (
 from guardrails.stores.context import get_call_kwarg, get_document_store
 from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
+from guardrails.utils.guard_utils import get_guard_token_consumption
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
 from guardrails.utils.telemetry_utils import trace_validator
 from guardrails.utils.validator_utils import PROVENANCE_V1_PROMPT
@@ -237,6 +238,7 @@ class Validator:
     run_in_separate_process = False
     override_value_on_pass = False
     required_metadata_keys = []
+    _token_consumption = 0
 
     def __init__(
         self,
@@ -928,6 +930,7 @@ class SimilarToDocument(Validator):
         self._document = document
         embedding_response = openai.Embedding.create(input=[document], model=model)
         embedding = embedding_response["data"][0]["embedding"]  # type: ignore
+        self._token_consumption = embedding_response["usage"]["total_tokens"] or 0
         self._document_embedding = np.array(embedding)
         self._model = model
         self._threshold = float(threshold)
@@ -962,6 +965,8 @@ class SimilarToDocument(Validator):
         value_embedding = np.array(
             embedding_response["data"][0]["embedding"]  # type: ignore
         )
+        token_count = embedding_response["usage"]["total_tokens"] or 0
+        total_token_consumption = token_count + self._token_consumption
 
         similarity = self.cosine_similarity(
             self._document_embedding,
@@ -971,9 +976,10 @@ class SimilarToDocument(Validator):
             return FailResult(
                 error_message=f"Value {value} is not similar enough "
                 f"to document {self._document}.",
+                tokens_consumed=total_token_consumption
             )
 
-        return PassResult()
+        return PassResult(tokens_consumed=token_count)
 
     def to_prompt(self, with_keywords: bool = True) -> str:
         return ""
@@ -1129,6 +1135,7 @@ class ExtractedSummarySentencesMatch(Validator):
     """  # noqa
 
     required_metadata_keys = ["filepaths"]
+    _embedding_model = None
 
     def __init__(
         self,
@@ -1143,9 +1150,8 @@ class ExtractedSummarySentencesMatch(Validator):
         self._threshold = float(threshold)
         self.store = document_store or get_document_store()
 
-    @staticmethod
     def _instantiate_store(
-        metadata, api_key: Optional[str] = None, api_base: Optional[str] = None
+        self, metadata, api_key: Optional[str] = None, api_base: Optional[str] = None
     ):
         if "document_store" in metadata:
             return metadata["document_store"]
@@ -1158,14 +1164,14 @@ class ExtractedSummarySentencesMatch(Validator):
             from guardrails.vectordb import Faiss
 
             if "embedding_model" in metadata:
-                embedding_model = metadata["embedding_model"]
+                self._embedding_model = metadata["embedding_model"]
             else:
                 from guardrails.embedding import OpenAIEmbedding
 
-                embedding_model = OpenAIEmbedding(api_key=api_key, api_base=api_base)
+                self._embedding_model = OpenAIEmbedding(api_key=api_key, api_base=api_base)
 
             vector_db = Faiss.new_flat_ip_index(
-                embedding_model.output_dim, embedder=embedding_model
+                self._embedding_model.output_dim, embedder=self._embedding_model
             )
 
         return EphemeralDocumentStore(vector_db)
@@ -1218,6 +1224,13 @@ class ExtractedSummarySentencesMatch(Validator):
         metadata["summary_with_citations"] = fixed_summary
         metadata["citations"] = citations
 
+        embedding_token_consumption = (
+            self._embedding_model._token_consumption
+            if self._embedding_model and hasattr(self._embedding_model, '_token_consumption')
+            else 0
+        )
+        total_token_consumption = self._token_consumption + embedding_token_consumption
+
         if unverified:
             unverified_sentences = "\n".join(unverified)
             return FailResult(
@@ -1227,9 +1240,10 @@ class ExtractedSummarySentencesMatch(Validator):
                     f"{unverified_sentences}\n that are not similar to any document."
                 ),
                 fix_value=fixed_summary,
+                tokens_consumed=total_token_consumption
             )
 
-        return PassResult(metadata=metadata)
+        return PassResult(metadata=metadata, tokens_consumed=total_token_consumption)
 
     def to_prompt(self, with_keywords: bool = True) -> str:
         return ""
@@ -1541,7 +1555,9 @@ class SaliencyCheck(Validator):
             with open(os.path.join(docs_dir, doc_path)) as f:
                 text = f.read()
             # Precompute topics for each document
-            self._document_store[doc_path] = self._get_topics(text)
+            topics, token_consumption = self._get_topics(text)
+            self._document_store[doc_path] = topics
+            self._token_consumption = token_consumption or 0
 
     @property
     def _topics(self) -> List[str]:
@@ -1552,7 +1568,7 @@ class SaliencyCheck(Validator):
             topics.update(doc_topics)
         return list(topics)
 
-    def _get_topics(self, text: str, topics: Optional[List[str]] = None) -> List[str]:
+    def _get_topics(self, text: str, topics: Optional[List[str]] = None) -> Tuple(List[str], Optional[int]):
         """Extract topics from a string."""
 
         from guardrails import Guard
@@ -1588,14 +1604,17 @@ Make sure that topics are relevant to text, and topics are not too specific or g
 
         guard = Guard.from_rail_string(spec)
         _, validated_output = guard(llm_api=self.llm_callable)
-        return validated_output["topics"]
+        token_consumption = get_guard_token_consumption(guard)
+        return (validated_output["topics"], token_consumption)
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
-        topics_in_summary = self._get_topics(value, topics=self._topics)
+        topics_in_summary, token_consumption = self._get_topics(value, topics=self._topics)
 
         # Compute overlap between topics in document and summary
         intersection = set(topics_in_summary).intersection(set(self._topics))
         overlap = len(intersection) / len(self._topics)
+
+        total_token_consumption = self._token_consumption + (token_consumption or 0)
 
         if overlap < self._threshold:
             return FailResult(
@@ -1604,9 +1623,10 @@ Make sure that topics are relevant to text, and topics are not too specific or g
                     f"{set(self._topics).difference(intersection)}"
                 ),
                 fix_value="",
+                tokens_consumed=total_token_consumption
             )
 
-        return PassResult()
+        return PassResult(tokens_consumed=total_token_consumption)
 
 
 @register_validator(name="qa-relevance-llm-eval", data_type="string")
@@ -1668,11 +1688,13 @@ Relevant (as a JSON with a single boolean key, "relevant"):\
         )
         guard = Guard.from_rail_string(spec)
 
-        return guard(
+        _, validated_output = guard(
             self.llm_callable,
             max_tokens=10,
             temperature=0.1,
-        )[1]
+        )
+        token_consumption = get_guard_token_consumption(guard) or 0
+        return validated_output, token_consumption
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
         if "question" not in metadata:
@@ -1682,15 +1704,19 @@ Relevant (as a JSON with a single boolean key, "relevant"):\
 
         question = metadata["question"]
 
-        relevant = self._selfeval(question, value)["relevant"]
+        relevant, token_consumption = self._selfeval(question, value)["relevant"]
+
+        total_token_consumption = self._token_consumption + token_consumption
+
         if relevant:
-            return PassResult()
+            return PassResult(tokens_consumed=total_token_consumption)
 
         fixed_answer = "No relevant answer found."
         return FailResult(
             error_message=f"The answer {value} is not relevant "
             f"to the question {question}.",
             fix_value=fixed_answer,
+            tokens_consumed=total_token_consumption
         )
 
     def to_prompt(self, with_keywords: bool = True) -> str:
@@ -2088,6 +2114,7 @@ class ProvenanceV1(Validator):
                     ],
                     max_tokens=self._max_tokens,
                 )
+                self._token_consumption = self._token_consumption + (response["usage"]["total_tokens"] or 0)
                 return response["choices"][0]["message"]["content"]
 
             self._llm_callable = openai_callable
@@ -2213,8 +2240,9 @@ class ProvenanceV1(Validator):
                     f"\n{unsupported_sentences}"
                 ),
                 fix_value="\n".join(supported_sentences),
+                tokens_consumed=self._token_consumption
             )
-        return PassResult(metadata=metadata)
+        return PassResult(metadata=metadata, tokens_consumed=self._token_consumption)
 
     def validate_full_text(
         self, value: Any, query_function: Callable, metadata: Dict[str, Any]
@@ -2229,8 +2257,9 @@ class ProvenanceV1(Validator):
                     "The following text in your response is not supported by the "
                     "supported by the provided context:\n" + value
                 ),
+                tokens_consumed=self._token_consumption
             )
-        return PassResult(metadata=metadata)
+        return PassResult(metadata=metadata, tokens_consumed=self._token_consumption)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
         api_key = get_call_kwarg("api_key")
@@ -2248,10 +2277,18 @@ class ProvenanceV1(Validator):
 
         query_function = self.get_query_function(metadata)
         if self._validation_method == "sentence":
-            return self.validate_each_sentence(value, query_function, metadata)
+            result = self.validate_each_sentence(value, query_function, metadata)
+            # There's not a low touch way to track tokens via pass-by-value.
+            # We also only consume tokens in this Validator during validate,
+            # so we can reset the class property each round.
+            self._token_consumption = 0
+            return result
         elif self._validation_method == "full":
-            return self.validate_full_text(value, query_function, metadata)
+            result = self.validate_full_text(value, query_function, metadata)
+            self._token_consumption = 0
+            return result
         else:
+            self._token_consumption = 0
             raise ValueError("validation_method must be 'sentence' or 'full'.")
 
     @staticmethod
