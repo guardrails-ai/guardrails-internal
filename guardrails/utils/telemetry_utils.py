@@ -137,13 +137,12 @@ def trace_validation_result(
 
 def trace_validator(
     validator_name: str,
-    id: int,
+    obj_id: int,
     namespace: str = None,
     on_fail_descriptor: str = None,
     tracer: Optional[Tracer] = None,
     **init_kwargs,
 ):
-    # print(f"validator {validator_name} was instantiated with id {id}")
     def trace_validator_wrapper(fn):
         _tracer = get_tracer(tracer)
 
@@ -164,16 +163,12 @@ def trace_validator(
                         "args",
                         to_string({k: to_string(v) for k, v in init_kwargs.items()}),
                     )
-                    validator_span.set_attribute("instance_id", to_string(id))
+                    validator_span.set_attribute("instance_id", to_string(obj_id))
 
                     # NOTE: Update if Validator.validate method signature ever changes
                     if args is not None and len(args) > 1:
                         validator_span.set_attribute("input", to_string(args[1]))
                     
-                    # print(f"============ START trace_validator.with_trace ============")
-                    # print(f"{validator_name}.validate with id {id} was called: ")
-                    # print(fn)
-                    # print(f"============ END trace_validator.with_trace ============")
                     return fn(*args, **kwargs)
                 except Exception as e:
                     validator_span.set_status(
@@ -184,7 +179,6 @@ def trace_validator(
         @wraps(fn)
         def without_a_trace(*args, **kwargs):
             return fn(*args, **kwargs)
-
         if _tracer is not None and hasattr(_tracer, "start_as_current_span"):
             return with_trace
         else:
