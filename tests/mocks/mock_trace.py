@@ -1,4 +1,6 @@
 from contextlib import AbstractContextManager
+import random
+import string
 from types import TracebackType
 from typing import Optional, Type
 
@@ -36,3 +38,8 @@ class MockTracer:
 
     def start_as_current_span(self, *args, **kwargs):
         return self.span or MockSpan()
+
+class MockContext:
+     _id: str
+     def __init__(self):
+        self._id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))

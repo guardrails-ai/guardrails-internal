@@ -265,13 +265,6 @@ class Validator:
                 self.rail_alias in validators_registry
             ), f"Validator {self.__class__.__name__} is not registered. "
 
-        self.validate = trace_validator(
-            validator_name=self.rail_alias,
-            obj_id=id(self),
-            namespace=self.namespace,
-            on_fail_descriptor=self.on_fail_descriptor,
-            **kwargs,
-        )(self.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
         """Validates a value and return a validation result."""
