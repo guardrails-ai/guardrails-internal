@@ -265,10 +265,6 @@ class Validator:
                 self.rail_alias in validators_registry
             ), f"Validator {self.__class__.__name__} is not registered. "
 
-        child_cls = type(self)
-        child_cls.validate = trace_validator(
-            validator_name=child_cls.rail_alias, namespace=child_cls.namespace
-        )(child_cls.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
         """Validates a value and return a validation result."""
@@ -574,7 +570,6 @@ class ValidLength(Validator):
             else:
                 last_val = [value[-1]]
                 corrected_value = value + last_val * (self._min - len(value))
-
             return FailResult(
                 error_message=f"Value has length less than {self._min}. "
                 f"Please return a longer output, "
@@ -590,7 +585,6 @@ class ValidLength(Validator):
                 f"that is shorter than {self._max} characters.",
                 fix_value=value[: self._max],
             )
-
         return PassResult()
 
 

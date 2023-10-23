@@ -37,3 +37,12 @@ full:
 	pip install -e ".[all]"
 
 all: autoformat lint docs test
+
+clean:
+	rm -rf ./build
+	rm -rf ./guardrails_ai.egg-info
+
+clean-build:
+	make clean
+	sleep 1
+	make dev

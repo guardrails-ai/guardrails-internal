@@ -21,6 +21,7 @@ from guardrails.utils.reask_utils import (
 )
 from guardrails.utils.telemetry_utils import (
     async_trace,
+    get_current_context,
     get_error_code,
     get_result_type,
     get_span,
@@ -30,7 +31,7 @@ from guardrails.utils.telemetry_utils import (
     trace_validator,
     trace_validator_result,
 )
-from tests.mocks.mock_trace import MockSpan, MockTrace, MockTracer
+from tests.mocks.mock_trace import MockContext, MockSpan, MockTrace, MockTracer
 
 
 @pytest.mark.parametrize(
@@ -138,22 +139,58 @@ def test_get_tracer__none():
 
     assert actual_tracer is None
 
+def test_get_context__current(mocker):
+    otel_context = MockContext()
+    mock_otel_context = mocker.patch("guardrails.utils.telemetry_utils.context.get_current")
+    mock_otel_context.return_value = otel_context
+    
+    tracer_context = MockContext()
+    mock_tracer_context = mocker.patch("guardrails.utils.telemetry_utils.get_tracer_context")
+    mock_tracer_context.return_value = tracer_context
 
-def test_get_span__injected():
+    current_context = get_current_context()
+
+    assert current_context == otel_context
+    assert current_context != tracer_context
+
+def test_get_context__tracer(mocker):
+    otel_context = {}
+    mock_otel_context = mocker.patch("guardrails.utils.telemetry_utils.context.get_current")
+    mock_otel_context.return_value = otel_context
+    
+    tracer_context = MockContext()
+    mock_tracer_context = mocker.patch("guardrails.utils.telemetry_utils.get_tracer_context")
+    mock_tracer_context.return_value = tracer_context
+
+    current_context = get_current_context()
+
+    assert current_context == tracer_context
+    assert current_context != otel_context
+
+def test_get_span__injected(mocker):
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
+
     mock_span = MockSpan()
     actual_tracer = get_span(mock_span)
 
     assert actual_tracer == mock_span
+    assert mock_get_context.call_count == 0
 
 
 def test_get_span__current_span(mocker):
     mock_trace = mocker.patch("opentelemetry.trace", MockTrace)
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
     get_current_span_spy = mocker.spy(mock_trace, "get_current_span")
 
     actual_tracer = get_span()
 
     assert isinstance(actual_tracer, MockSpan)
     assert get_current_span_spy.called_once
+    assert mock_get_context.call_count == 1
 
 
 def test_get_span__none(mocker):
@@ -166,12 +203,15 @@ def test_get_span__none(mocker):
         return realimport(name, globals, locals, fromlist, level)
 
     import_mocker = mocker.patch.object(builtins, "__import__", mock_import)
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
 
     print_spy = mocker.spy(builtins, "print")
 
     actual_tracer = get_span()
 
     assert actual_tracer is None
+    # Import error occurs before get_current_context is called
+    assert mock_get_context.call_count == 0
     print_spy.assert_called_once_with(import_error)
     mocker.stop(import_mocker)
 
@@ -296,6 +336,10 @@ def test_trace_validator__with_trace(mocker):
     mock_tracer = MockTracer()
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+    
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -304,13 +348,14 @@ def test_trace_validator__with_trace(mocker):
     mock_fn.__qualname__ = "mock_fn"
     mock_fn.__annotations__ = {}
 
-    decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+    decorated_fn = trace_validator(validator_name="mock-validator", obj_id=1234)(mock_fn)
 
     decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 1
     assert start_as_current_span_spy.call_count == 1
-    start_as_current_span_spy.assert_called_once_with("mock-validator.validate")
+    start_as_current_span_spy.assert_called_once_with("mock-validator.validate", mock_context)
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
 
@@ -322,6 +367,10 @@ def test_trace_validator__with_trace_exception(mocker):
     mock_tracer.span = mock_span
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -336,13 +385,16 @@ def test_trace_validator__with_trace_exception(mocker):
     mock_fn.side_effect = mock_fn_error
 
     with pytest.raises(Exception) as error:
-        decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+        decorated_fn = trace_validator(validator_name="mock-validator", obj_id=1234)(
+            mock_fn
+        )
 
         decorated_fn("arg1", kwarg1="kwarg1")
 
         assert mock_get_tracer.call_count == 1
+        assert mock_get_context.call_count == 1
         assert start_as_current_span_spy.call_count == 1
-        start_as_current_span_spy.assert_called_once_with("mock-validator.validate")
+        start_as_current_span_spy.assert_called_once_with("mock-validator.validate", mock_context)
         mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
         set_status_spy.assert_called_once_with(
             status=StatusCode.ERROR, description="Error!"
@@ -353,17 +405,20 @@ def test_trace_validator__with_trace_exception(mocker):
 def test_trace_validator__without_a_trace(mocker):
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = None
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    
 
     mock_fn = mocker.stub(name="mock_fn")
     mock_fn.__name__ = "mock_fn"
     mock_fn.__qualname__ = "mock_fn"
     mock_fn.__annotations__ = {}
 
-    decorated_fn = trace_validator(validator_name="mock-validator")(mock_fn)
+    decorated_fn = trace_validator(validator_name="mock-validator", obj_id=1234)(mock_fn)
 
     decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 0
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
 
@@ -371,6 +426,10 @@ def test_trace__with_trace(mocker):
     mock_tracer = MockTracer()
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -384,8 +443,9 @@ def test_trace__with_trace(mocker):
     decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 1
     assert start_as_current_span_spy.call_count == 1
-    start_as_current_span_spy.assert_called_once_with("mock-method")
+    start_as_current_span_spy.assert_called_once_with("mock-method", mock_context)
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
 
@@ -397,6 +457,10 @@ def test_trace__with_trace_exception(mocker):
     mock_tracer.span = mock_span
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -416,8 +480,9 @@ def test_trace__with_trace_exception(mocker):
         decorated_fn("arg1", kwarg1="kwarg1")
 
         assert mock_get_tracer.call_count == 1
+        assert mock_get_context.call_count == 1
         assert start_as_current_span_spy.call_count == 1
-        start_as_current_span_spy.assert_called_once_with("mock-method")
+        start_as_current_span_spy.assert_called_once_with("mock-method", mock_context)
         mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
         set_status_spy.assert_called_once_with(
             status=StatusCode.ERROR, description="Error!"
@@ -429,6 +494,8 @@ def test_trace__without_a_trace(mocker):
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = None
 
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+
     mock_fn = mocker.stub(name="mock_fn")
     mock_fn.__name__ = "mock_fn"
     mock_fn.__qualname__ = "mock_fn"
@@ -439,6 +506,7 @@ def test_trace__without_a_trace(mocker):
     decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 0
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
 
@@ -447,6 +515,10 @@ async def test_async_trace__with_trace(mocker):
     mock_tracer = MockTracer()
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -460,8 +532,9 @@ async def test_async_trace__with_trace(mocker):
     await decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 1
     assert start_as_current_span_spy.call_count == 1
-    start_as_current_span_spy.assert_called_once_with("mock-method")
+    start_as_current_span_spy.assert_called_once_with("mock-method", mock_context)
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
 
 
@@ -474,6 +547,10 @@ async def test_async_trace__with_trace_exception(mocker):
     mock_tracer.span = mock_span
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = mock_tracer
+
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
 
     start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
 
@@ -493,8 +570,9 @@ async def test_async_trace__with_trace_exception(mocker):
         await decorated_fn("arg1", kwarg1="kwarg1")
 
         assert mock_get_tracer.call_count == 1
+        assert mock_get_context.call_count == 1
         assert start_as_current_span_spy.call_count == 1
-        start_as_current_span_spy.assert_called_once_with("mock-method")
+        start_as_current_span_spy.assert_called_once_with("mock-method", mock_context)
         mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")
         set_status_spy.assert_called_once_with(
             status=StatusCode.ERROR, description="Error!"
@@ -507,6 +585,8 @@ async def test_async_trace__without_a_trace(mocker):
     mock_get_tracer = mocker.patch("guardrails.utils.telemetry_utils.get_tracer")
     mock_get_tracer.return_value = None
 
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+
     mock_fn = mocker.async_stub(name="mock_fn")
     mock_fn.__name__ = "mock_fn"
     mock_fn.__qualname__ = "mock_fn"
@@ -517,4 +597,5 @@ async def test_async_trace__without_a_trace(mocker):
     await decorated_fn("arg1", kwarg1="kwarg1")
 
     assert mock_get_tracer.call_count == 1
+    assert mock_get_context.call_count == 0
     mock_fn.assert_called_once_with("arg1", kwarg1="kwarg1")

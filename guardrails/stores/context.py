@@ -1,5 +1,5 @@
 from contextvars import ContextVar, copy_context
-from typing import Any, Dict, Literal, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 try:
     from guardrails.stores.document.base import DocumentStoreBase
@@ -10,14 +10,20 @@ except Exception:
 
 
 try:
+    from opentelemetry import context
+    from opentelemetry.context import Context as TracerContext
     from opentelemetry.trace import Tracer
 except Exception:
 
     class Tracer:
         pass
+    class TracerContext:
+        pass
+    context = None
 
 
 TRACER_KEY: Literal["tracer"] = "gr.reserved.tracer"
+TRACER_CONTEXT_KEY: Literal["tracer"] = "gr.reserved.tracer.context"
 DOCUMENT_STORE_KEY: Literal["document_store"] = "gr.reserved.document_store"
 CALL_KWARGS_KEY: Literal["call_kwargs"] = "gr.reserved.call_kwargs"
 
@@ -30,12 +36,26 @@ def get_document_store() -> Union[DocumentStoreBase, None]:
     return get_context_var(DOCUMENT_STORE_KEY)
 
 
-def set_tracer(tracer: Union[Tracer, None]) -> None:
+def set_tracer(tracer: Optional[Tracer] = None) -> None:
     set_context_var(TRACER_KEY, tracer)
-
 
 def get_tracer() -> Union[Tracer, None]:
     return get_context_var(TRACER_KEY)
+
+def set_tracer_context(tracer_context: Optional[TracerContext] = None) -> None:
+    tracer_context = (
+        tracer_context
+        if tracer_context
+        else (
+            context.get_current()
+            if context is not None
+            else None
+        )
+    )
+    set_context_var(TRACER_CONTEXT_KEY, tracer_context)
+
+def get_tracer_context() -> Union[TracerContext, None]:
+    return get_context_var(TRACER_CONTEXT_KEY)
 
 
 def set_call_kwargs(kwargs: Dict[str, Any]) -> None:
