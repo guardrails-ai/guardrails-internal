@@ -1,11 +1,12 @@
 import lxml.etree as ET
 import pytest
 
+from guardrails.datatypes import Object
 from guardrails.utils.json_utils import verify_schema_against_json
 
 
 @pytest.mark.parametrize(
-    "xml, generated_json, result",
+    "xml, generated_json, result, coerce_types",
     [
         (
             """
@@ -44,6 +45,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 "my_list2": [],
             },
             True,
+            False,
         ),
         (
             """
@@ -75,6 +77,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 "my_dict": {"my_string": "string"},
                 "my_list2": [],
             },
+            False,
             False,
         ),
         (
@@ -110,6 +113,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 }
             },
             True,
+            False,
         ),
         (
             """
@@ -154,6 +158,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 ],
             },
             True,
+            False,
         ),
         (
             """
@@ -196,6 +201,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 },
             },
             True,
+            False,
         ),
         (
             """
@@ -210,6 +216,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 "my_string": None,
             },
             True,
+            False,
         ),
         (
             """
@@ -224,6 +231,7 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 # "my_string": None,
             },
             True,
+            False,
         ),
         (
             """
@@ -238,9 +246,56 @@ from guardrails.utils.json_utils import verify_schema_against_json
                 "my_list": ["e"],
             },
             True,
+            False,
+        ),
+        (
+            """
+<root>
+<string
+    name="my_string"
+>
+</string>
+</root>
+            """,
+            {
+                "my_string": "e",
+            },
+            True,
+            True,
+        ),
+        (
+            """
+<root>
+<string
+    name="my_string"
+>
+</string>
+</root>
+            """,
+            {
+                "my_string": ["a"],
+            },
+            False,
+            True,
+        ),
+        (
+            """
+<root>
+<string
+    name="my_string"
+>
+</string>
+</root>
+            """,
+            {
+                "my_string": {"a": "a"},
+            },
+            False,
+            True,
         ),
     ],
 )
-def test_skeleton(xml, generated_json, result):
+def test_skeleton(xml, generated_json, result, coerce_types):
     xml_schema = ET.fromstring(xml)
-    assert verify_schema_against_json(xml_schema, generated_json) is result
+    datatype = Object.from_xml(xml_schema)
+    assert verify_schema_against_json(datatype, generated_json) is result

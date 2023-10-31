@@ -10,19 +10,25 @@ import itertools
 import logging
 import os
 import re
+import string
 import warnings
-from collections import defaultdict
 from functools import partial
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import openai
-import pydantic
-from pydantic import Field
+import rstr
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
 from guardrails.utils.validator_utils import PROVENANCE_V1_PROMPT
+from guardrails.validator_base import (
+    FailResult,
+    PassResult,
+    ValidationResult,
+    Validator,
+    register_validator,
+)
 
 try:
     import numpy as np
@@ -32,9 +38,14 @@ else:
     _HAS_NUMPY = True
 
 try:
-    import nltk
+    import detect_secrets  # type: ignore
 except ImportError:
-    nltk = None
+    detect_secrets = None  # type: ignore
+
+try:
+    import nltk  # type: ignore
+except ImportError:
+    nltk = None  # type: ignore
 
 if nltk is not None:
     try:
@@ -43,269 +54,7 @@ if nltk is not None:
         nltk.download("punkt")
 
 
-validators_registry = {}
-types_to_validators = defaultdict(list)
-
-
 logger = logging.getLogger(__name__)
-
-
-class ValidatorError(Exception):
-    """Base class for all validator errors."""
-
-
-class Filter:
-    pass
-
-
-class Refrain:
-    pass
-
-
-def check_refrain_in_list(schema: List) -> bool:
-    """Checks if a Refrain object exists in a list.
-
-    Args:
-        schema: A list that can contain lists, dicts or scalars.
-
-    Returns:
-        bool: True if a Refrain object exists in the list.
-    """
-    for item in schema:
-        if isinstance(item, Refrain):
-            return True
-        elif isinstance(item, list):
-            if check_refrain_in_list(item):
-                return True
-        elif isinstance(item, dict):
-            if check_refrain_in_dict(item):
-                return True
-
-    return False
-
-
-def check_refrain_in_dict(schema: Dict) -> bool:
-    """Checks if a Refrain object exists in a dict.
-
-    Args:
-        schema: A dict that can contain lists, dicts or scalars.
-
-    Returns:
-        True if a Refrain object exists in the dict.
-    """
-    for key, value in schema.items():
-        if isinstance(value, Refrain):
-            return True
-        elif isinstance(value, list):
-            if check_refrain_in_list(value):
-                return True
-        elif isinstance(value, dict):
-            if check_refrain_in_dict(value):
-                return True
-
-    return False
-
-
-def filter_in_list(schema: List) -> List:
-    """Remove out all Filter objects from a list.
-
-    Args:
-        schema: A list that can contain lists, dicts or scalars.
-
-    Returns:
-        A list with all Filter objects removed.
-    """
-    filtered_list = []
-
-    for item in schema:
-        if isinstance(item, Filter):
-            pass
-        elif isinstance(item, list):
-            filtered_item = filter_in_list(item)
-            if len(filtered_item):
-                filtered_list.append(filtered_item)
-        elif isinstance(item, dict):
-            filtered_dict = filter_in_dict(item)
-            if len(filtered_dict):
-                filtered_list.append(filtered_dict)
-        else:
-            filtered_list.append(item)
-
-    return filtered_list
-
-
-def filter_in_dict(schema: Dict) -> Dict:
-    """Remove out all Filter objects from a dictionary.
-
-    Args:
-        schema: A dictionary that can contain lists, dicts or scalars.
-
-    Returns:
-        A dictionary with all Filter objects removed.
-    """
-    filtered_dict = {}
-
-    for key, value in schema.items():
-        if isinstance(value, Filter):
-            pass
-        elif isinstance(value, list):
-            filtered_item = filter_in_list(value)
-            if len(filtered_item):
-                filtered_dict[key] = filtered_item
-        elif isinstance(value, dict):
-            filtered_dict[key] = filter_in_dict(value)
-        else:
-            filtered_dict[key] = value
-
-    return filtered_dict
-
-
-def register_validator(name: str, data_type: Union[str, List[str]]):
-    """Register a validator for a data type."""
-    from guardrails.datatypes import registry as types_registry
-
-    if isinstance(data_type, str):
-        data_type = list(types_registry.keys()) if data_type == "all" else [data_type]
-    # Make sure that the data type string exists in the data types registry.
-    for dt in data_type:
-        if dt not in types_registry:
-            raise ValueError(f"Data type {dt} is not registered.")
-
-        types_to_validators[dt].append(name)
-
-    def decorator(cls_or_func: Union[Type[Validator], Callable]):
-        """Register a validator for a data type."""
-        if isinstance(cls_or_func, type) and issubclass(cls_or_func, Validator):
-            cls = cls_or_func
-            cls.rail_alias = name
-        elif callable(cls_or_func) and not isinstance(cls_or_func, type):
-            func = cls_or_func
-            func.rail_alias = name  # type: ignore
-            # ensure function takes two args
-            if not func.__code__.co_argcount == 2:
-                raise ValueError(
-                    f"Validator function {func.__name__} must take two arguments."
-                )
-            # dynamically create Validator subclass with `validate` method as `func`
-            cls = type(
-                name,
-                (Validator,),
-                {"validate": staticmethod(func), "rail_alias": name},
-            )
-        else:
-            raise ValueError(
-                "Only functions and Validator subclasses "
-                "can be registered as validators."
-            )
-        validators_registry[name] = cls
-        return cls
-
-    return decorator
-
-
-class ValidationResult(pydantic.BaseModel):
-    outcome: str
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class PassResult(ValidationResult):
-    outcome: Literal["pass"] = "pass"
-
-    class ValueOverrideSentinel:
-        pass
-
-    # should only be used if Validator.override_value_on_pass is True
-    value_override: Optional[Any] = Field(default=ValueOverrideSentinel)
-
-
-class FailResult(ValidationResult):
-    outcome: Literal["fail"] = "fail"
-
-    error_message: str
-    fix_value: Optional[Any] = None
-
-
-class Validator:
-    """Base class for validators."""
-
-    rail_alias: str
-
-    run_in_separate_process = False
-    override_value_on_pass = False
-    required_metadata_keys = []
-
-    def __init__(self, on_fail: Optional[Union[Callable, str]] = None, **kwargs):
-        if on_fail is None:
-            on_fail = "noop"
-        if isinstance(on_fail, str):
-            self.on_fail_descriptor = on_fail
-            self.on_fail_method = None
-        else:
-            self.on_fail_descriptor = "custom"
-            self.on_fail_method = on_fail
-
-        # Store the kwargs for the validator.
-        self._kwargs = kwargs
-
-        assert (
-            self.rail_alias in validators_registry
-        ), f"Validator {self.__class__.__name__} is not registered. "
-
-    def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
-        """Validates a value and return a validation result."""
-        raise NotImplementedError
-
-    def to_prompt(self, with_keywords: bool = True) -> str:
-        """Convert the validator to a prompt.
-
-        E.g. ValidLength(5, 10) -> "length: 5 10" when with_keywords is False.
-        ValidLength(5, 10) -> "length: min=5 max=10" when with_keywords is True.
-
-        Args:
-            with_keywords: Whether to include the keyword arguments in the prompt.
-
-        Returns:
-            A string representation of the validator.
-        """
-        if not len(self._kwargs):
-            return self.rail_alias
-
-        kwargs = self._kwargs.copy()
-        for k, v in kwargs.items():
-            if not isinstance(v, str):
-                kwargs[k] = str(v)
-
-        params = " ".join(list(kwargs.values()))
-        if with_keywords:
-            params = " ".join([f"{k}={v}" for k, v in kwargs.items()])
-        return f"{self.rail_alias}: {params}"
-
-    def to_xml_attrib(self):
-        """Convert the validator to an XML attribute."""
-
-        if not len(self._kwargs):
-            return self.rail_alias
-
-        validator_args = []
-        for arg in self.__init__.__code__.co_varnames[1:]:
-            if arg not in ("on_fail", "args", "kwargs"):
-                str_arg = str(self._kwargs[arg])
-                str_arg = "{" + str_arg + "}" if " " in str_arg else str_arg
-                validator_args.append(str_arg)
-
-        params = " ".join(validator_args)
-        return f"{self.rail_alias}: {params}"
-
-    def __call__(self, value):
-        result = self.validate(value, {})
-        if isinstance(result, FailResult):
-            from guardrails.validator_service import ValidatorServiceBase
-
-            validator_service = ValidatorServiceBase()
-            return validator_service.perform_correction(
-                [result], value, self, self.on_fail_descriptor
-            )
-        return value
 
 
 # @register_validator('required', 'all')
@@ -542,11 +291,18 @@ class ValidLength(Validator):
 
             # Repeat the last character to make the value the correct length.
             if isinstance(value, str):
-                last_val = value[-1]
+                if not value:
+                    last_val = rstr.rstr(string.ascii_lowercase, 1)
+                else:
+                    last_val = value[-1]
                 corrected_value = value + last_val * (self._min - len(value))
             else:
-                last_val = [value[-1]]
-                corrected_value = value + last_val * (self._min - len(value))
+                if not value:
+                    last_val = [rstr.rstr(string.ascii_lowercase, 1)]
+                else:
+                    last_val = [value[-1]]
+                # extend value by padding it out with last_val
+                corrected_value = value.extend([last_val] * (self._min - len(value)))
 
             return FailResult(
                 error_message=f"Value has length less than {self._min}. "
@@ -565,6 +321,64 @@ class ValidLength(Validator):
             )
 
         return PassResult()
+
+
+@register_validator(name="regex_match", data_type="string")
+class RegexMatch(Validator):
+    """Validates that a value matches a regular expression.
+
+    **Key Properties**
+
+    | Property                      | Description                       |
+    | ----------------------------- | --------------------------------- |
+    | Name for `format` attribute   | `regex_match`                     |
+    | Supported data types          | `string`                          |
+    | Programmatic fix              | Generate a string that matches the regular expression |
+
+    Parameters: Arguments
+        regex: Str regex pattern
+        match_type: Str in {"search", "fullmatch"} for a regex search or full-match option
+    """  # noqa
+
+    def __init__(
+        self,
+        regex: str,
+        match_type: Optional[str] = None,
+        on_fail: Optional[Callable] = None,
+    ):
+        # todo -> something forces this to be passed as kwargs and therefore xml-ized.
+        # match_types = ["fullmatch", "search"]
+
+        if match_type is None:
+            match_type = "fullmatch"
+        assert match_type in [
+            "fullmatch",
+            "search",
+        ], 'match_type must be in ["fullmatch", "search"]'
+
+        super().__init__(on_fail=on_fail, match_type=match_type, regex=regex)
+        self._regex = regex
+        self._match_type = match_type
+
+    def validate(self, value: Any, metadata: Dict) -> ValidationResult:
+        p = re.compile(self._regex)
+        """Validates that value matches the provided regular expression."""
+        # Pad matching string on either side for fix
+        # example if we are performing a regex search
+        str_padding = (
+            "" if self._match_type == "fullmatch" else rstr.rstr(string.ascii_lowercase)
+        )
+        self._fix_str = str_padding + rstr.xeger(self._regex) + str_padding
+
+        if not getattr(p, self._match_type)(value):
+            return FailResult(
+                error_message=f"Result must match {self._regex}",
+                fix_value=self._fix_str,
+            )
+        return PassResult()
+
+    def to_prompt(self, with_keywords: bool = True) -> str:
+        return "results should match " + self._regex
 
 
 @register_validator(name="two-words", data_type="string")
@@ -617,7 +431,7 @@ class OneLine(Validator):
         return PassResult()
 
 
-@register_validator(name="valid-url", data_type=["string", "url"])
+@register_validator(name="valid-url", data_type=["string"])
 class ValidURL(Validator):
     """Validates that a value is a valid URL.
 
@@ -626,7 +440,7 @@ class ValidURL(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `valid-url`                       |
-    | Supported data types          | `string`, `url`                   |
+    | Supported data types          | `string`                          |
     | Programmatic fix              | None                              |
     """
 
@@ -651,7 +465,7 @@ class ValidURL(Validator):
         return PassResult()
 
 
-@register_validator(name="is-reachable", data_type=["string", "url"])
+@register_validator(name="is-reachable", data_type=["string"])
 class EndpointIsReachable(Validator):
     """Validates that a value is a reachable URL.
 
@@ -660,7 +474,7 @@ class EndpointIsReachable(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `is-reachable`                    |
-    | Supported data types          | `string`, `url`                   |
+    | Supported data types          | `string`,                         |
     | Programmatic fix              | None                              |
     """
 
@@ -694,7 +508,7 @@ class EndpointIsReachable(Validator):
         return PassResult()
 
 
-@register_validator(name="bug-free-python", data_type="pythoncode")
+@register_validator(name="bug-free-python", data_type="string")
 class BugFreePython(Validator):
     """Validates that there are no Python syntactic bugs in the generated code.
 
@@ -707,7 +521,7 @@ class BugFreePython(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `bug-free-python`                 |
-    | Supported data types          | `pythoncode`                      |
+    | Supported data types          | `string`                          |
     | Programmatic fix              | None                              |
     """
 
@@ -725,7 +539,7 @@ class BugFreePython(Validator):
         return PassResult()
 
 
-@register_validator(name="bug-free-sql", data_type=["sql", "string"])
+@register_validator(name="bug-free-sql", data_type=["string"])
 class BugFreeSQL(Validator):
     """Validates that there are no SQL syntactic bugs in the generated code.
 
@@ -738,7 +552,7 @@ class BugFreeSQL(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `bug-free-sql`                    |
-    | Supported data types          | `sql`, `string`                   |
+    | Supported data types          | `string`                          |
     | Programmatic fix              | None                              |
     """
 
@@ -761,7 +575,7 @@ class BugFreeSQL(Validator):
         return PassResult()
 
 
-@register_validator(name="sql-column-presence", data_type="sql")
+@register_validator(name="sql-column-presence", data_type="string")
 class SqlColumnPresence(Validator):
     """Validates that all columns in the SQL query are present in the schema.
 
@@ -770,7 +584,7 @@ class SqlColumnPresence(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `sql-column-presence`             |
-    | Supported data types          | `sql`                             |
+    | Supported data types          | `string`                          |
     | Programmatic fix              | None                              |
 
     Parameters: Arguments
@@ -802,7 +616,7 @@ class SqlColumnPresence(Validator):
         return PassResult()
 
 
-@register_validator(name="exclude-sql-predicates", data_type="sql")
+@register_validator(name="exclude-sql-predicates", data_type="string")
 class ExcludeSqlPredicates(Validator):
     """Validates that the SQL query does not contain certain predicates.
 
@@ -811,7 +625,7 @@ class ExcludeSqlPredicates(Validator):
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
     | Name for `format` attribute   | `exclude-sql-predicates`          |
-    | Supported data types          | `sql`                             |
+    | Supported data types          | `string`                          |
     | Programmatic fix              | None                              |
 
     Parameters: Arguments
@@ -1202,7 +1016,7 @@ class ReadingTime(Validator):
     """
 
     def __init__(self, reading_time: int, on_fail: str = "fix"):
-        super().__init__(on_fail=on_fail, max_time=reading_time)
+        super().__init__(on_fail=on_fail, reading_time=reading_time)
         self._max_time = reading_time
 
     def validate(self, value: Any, metadata: Dict) -> ValidationResult:
@@ -1284,7 +1098,7 @@ class ExtractiveSummary(Validator):
             store[filepath] = sentence_split(doc)
 
         try:
-            from thefuzz import fuzz
+            from thefuzz import fuzz  # type: ignore
         except ImportError:
             raise ImportError(
                 "`thefuzz` library is required for `extractive-summary` validator. "
@@ -1379,7 +1193,7 @@ class RemoveRedundantSentences(Validator):
         """Remove redundant sentences from a string."""
 
         try:
-            from thefuzz import fuzz
+            from thefuzz import fuzz  # type: ignore
         except ImportError:
             raise ImportError(
                 "`thefuzz` library is required for `remove-redundant-sentences` "
@@ -1661,8 +1475,12 @@ class ProvenanceV0(Validator):
 
     If providing query_function, it should take a string as input and return a list of
     (chunk, score) tuples. The chunk is a string and the score is a float representing
-    the cosine similarity between the chunk and the input string. The list should be
+    the cosine distance between the chunk and the input string. The list should be
     sorted in ascending order by score.
+
+    Note: The score should represent distance in embedding space, not similarity. I.e.,
+    lower is better and the score should be 0 if the chunk is identical to the input
+    string.
 
     Example:
         ```py
@@ -1721,51 +1539,52 @@ class ProvenanceV0(Validator):
         sources = metadata.get("sources", None)
 
         # Check that query_fn or sources are provided
-        if query_fn is not None and sources is not None:
-            warnings.warn(
-                "Both `query_function` and `sources` are provided in metadata. "
-                "`query_function` will be used."
-            )
-        elif query_fn is None and sources is None:
+        if query_fn is not None:
+            if sources is not None:
+                warnings.warn(
+                    "Both `query_function` and `sources` are provided in metadata. "
+                    "`query_function` will be used."
+                )
+            return query_fn
+
+        if sources is None:
             raise ValueError(
                 "You must provide either `query_function` or `sources` in metadata."
             )
-        elif query_fn is None and sources is not None:
-            # Check chunking strategy
-            chunk_strategy = metadata.get("chunk_strategy", "sentence")
-            if chunk_strategy not in ["sentence", "word", "char", "token"]:
-                raise ValueError(
-                    "`chunk_strategy` must be one of 'sentence', 'word', 'char', "
-                    "or 'token'."
-                )
-            chunk_size = metadata.get("chunk_size", 5)
-            chunk_overlap = metadata.get("chunk_overlap", 2)
 
-            # Check distance metric
-            distance_metric = metadata.get("distance_metric", "cosine")
-            if distance_metric not in ["cosine", "euclidean"]:
-                raise ValueError(
-                    "`distance_metric` must be one of 'cosine' or 'euclidean'."
-                )
+        # Check chunking strategy
+        chunk_strategy = metadata.get("chunk_strategy", "sentence")
+        if chunk_strategy not in ["sentence", "word", "char", "token"]:
+            raise ValueError(
+                "`chunk_strategy` must be one of 'sentence', 'word', 'char', "
+                "or 'token'."
+            )
+        chunk_size = metadata.get("chunk_size", 5)
+        chunk_overlap = metadata.get("chunk_overlap", 2)
 
-            # Check embed model
-            embed_function = metadata.get("embed_function", None)
-            if embed_function is None:
-                raise ValueError(
-                    "You must provide `embed_function` in metadata in order to "
-                    "use the default query function."
-                )
-            query_fn = partial(
-                self.query_vector_collection,
-                sources=metadata["sources"],
-                chunk_strategy=chunk_strategy,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                distance_metric=distance_metric,
-                embed_function=embed_function,
+        # Check distance metric
+        distance_metric = metadata.get("distance_metric", "cosine")
+        if distance_metric not in ["cosine", "euclidean"]:
+            raise ValueError(
+                "`distance_metric` must be one of 'cosine' or 'euclidean'."
             )
 
-        return query_fn
+        # Check embed model
+        embed_function = metadata.get("embed_function", None)
+        if embed_function is None:
+            raise ValueError(
+                "You must provide `embed_function` in metadata in order to "
+                "use the default query function."
+            )
+        return partial(
+            self.query_vector_collection,
+            sources=metadata["sources"],
+            chunk_strategy=chunk_strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            distance_metric=distance_metric,
+            embed_function=embed_function,
+        )
 
     def validate_each_sentence(
         self, value: Any, query_function: Callable, metadata: Dict[str, Any]
@@ -2024,7 +1843,7 @@ class ProvenanceV1(Validator):
                     ],
                     max_tokens=self._max_tokens,
                 )
-                return response["choices"][0]["message"]["content"]
+                return response["choices"][0]["message"]["content"]  # type: ignore
 
             self._llm_callable = openai_callable
         elif isinstance(llm_callable, Callable):
@@ -2035,58 +1854,59 @@ class ProvenanceV1(Validator):
                 " and returns a string."
             )
 
-    def get_query_function(self, metadata: Dict[str, Any]) -> None:
+    def get_query_function(self, metadata: Dict[str, Any]) -> Callable:
         # Exact same as ProvenanceV0
 
         query_fn = metadata.get("query_function", None)
         sources = metadata.get("sources", None)
 
         # Check that query_fn or sources are provided
-        if query_fn is not None and sources is not None:
-            warnings.warn(
-                "Both `query_function` and `sources` are provided in metadata. "
-                "`query_function` will be used."
-            )
-        elif query_fn is None and sources is None:
+        if query_fn is not None:
+            if sources is not None:
+                warnings.warn(
+                    "Both `query_function` and `sources` are provided in metadata. "
+                    "`query_function` will be used."
+                )
+            return query_fn
+
+        if sources is None:
             raise ValueError(
                 "You must provide either `query_function` or `sources` in metadata."
             )
-        elif query_fn is None and sources is not None:
-            # Check chunking strategy
-            chunk_strategy = metadata.get("chunk_strategy", "sentence")
-            if chunk_strategy not in ["sentence", "word", "char", "token"]:
-                raise ValueError(
-                    "`chunk_strategy` must be one of 'sentence', 'word', 'char', "
-                    "or 'token'."
-                )
-            chunk_size = metadata.get("chunk_size", 5)
-            chunk_overlap = metadata.get("chunk_overlap", 2)
 
-            # Check distance metric
-            distance_metric = metadata.get("distance_metric", "cosine")
-            if distance_metric not in ["cosine", "euclidean"]:
-                raise ValueError(
-                    "`distance_metric` must be one of 'cosine' or 'euclidean'."
-                )
+        # Check chunking strategy
+        chunk_strategy = metadata.get("chunk_strategy", "sentence")
+        if chunk_strategy not in ["sentence", "word", "char", "token"]:
+            raise ValueError(
+                "`chunk_strategy` must be one of 'sentence', 'word', 'char', "
+                "or 'token'."
+            )
+        chunk_size = metadata.get("chunk_size", 5)
+        chunk_overlap = metadata.get("chunk_overlap", 2)
 
-            # Check embed model
-            embed_function = metadata.get("embed_function", None)
-            if embed_function is None:
-                raise ValueError(
-                    "You must provide `embed_function` in metadata in order to "
-                    "use the default query function."
-                )
-            query_fn = partial(
-                ProvenanceV1.query_vector_collection,
-                sources=metadata["sources"],
-                chunk_strategy=chunk_strategy,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                distance_metric=distance_metric,
-                embed_function=embed_function,
+        # Check distance metric
+        distance_metric = metadata.get("distance_metric", "cosine")
+        if distance_metric not in ["cosine", "euclidean"]:
+            raise ValueError(
+                "`distance_metric` must be one of 'cosine' or 'euclidean'."
             )
 
-        return query_fn
+        # Check embed model
+        embed_function = metadata.get("embed_function", None)
+        if embed_function is None:
+            raise ValueError(
+                "You must provide `embed_function` in metadata in order to "
+                "use the default query function."
+            )
+        return partial(
+            self.query_vector_collection,
+            sources=metadata["sources"],
+            chunk_strategy=chunk_strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            distance_metric=distance_metric,
+            embed_function=embed_function,
+        )
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def call_llm(self, prompt: str) -> str:
@@ -2127,6 +1947,11 @@ class ProvenanceV1(Validator):
     def validate_each_sentence(
         self, value: Any, query_function: Callable, metadata: Dict[str, Any]
     ) -> ValidationResult:
+        if nltk is None:
+            raise ImportError(
+                "`nltk` library is required for `provenance-v0` validator. "
+                "Please install it with `pip install nltk`."
+            )
         # Split the value into sentences using nltk sentence tokenizer.
         sentences = nltk.sent_tokenize(value)
 
@@ -2202,11 +2027,11 @@ class ProvenanceV1(Validator):
         text: str,
         k: int,
         sources: List[str],
+        embed_function: Callable,
         chunk_strategy: str = "sentence",
         chunk_size: int = 5,
         chunk_overlap: int = 2,
         distance_metric: str = "cosine",
-        embed_function: Optional[Callable] = None,
     ) -> List[Tuple[str, float]]:
         chunks = [
             get_chunks_from_text(source, chunk_strategy, chunk_size, chunk_overlap)
@@ -2239,3 +2064,327 @@ class ProvenanceV1(Validator):
             raise ValueError("distance_metric must be 'cosine'.")
 
         return top_chunks
+
+
+@register_validator(name="similar-to-list", data_type="string")
+class SimilarToList(Validator):
+    """Validates that a value is similar to a list of previously known values.
+
+    **Key Properties**
+
+    | Property                      | Description                       |
+    | ----------------------------- | --------------------------------- |
+    | Name for `format` attribute   | `similar-to-list`                 |
+    | Supported data types          | `string`                          |
+    | Programmatic fix              | None                              |
+
+    Parameters: Arguments
+        standard_deviations (int): The number of standard deviations from the mean to check.
+        threshold (float): The threshold for the average semantic similarity for strings.
+
+    For integer values, this validator checks whether the value lies
+    within 'k' standard deviations of the mean of the previous values.
+    (Assumes that the previous values are normally distributed.) For
+    string values, this validator checks whether the average semantic
+    similarity between the generated value and the previous values is
+    less than a threshold.
+    """  # noqa
+
+    def __init__(
+        self,
+        standard_deviations: int = 3,
+        threshold: float = 0.1,
+        on_fail: Optional[Callable] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            on_fail,
+            standard_deviations=standard_deviations,
+            threshold=threshold,
+            **kwargs,
+        )
+        self._standard_deviations = int(standard_deviations)
+        self._threshold = float(threshold)
+
+    def get_semantic_similarity(
+        self, text1: str, text2: str, embed_function: Callable
+    ) -> float:
+        """Get the semantic similarity between two strings.
+
+        Args:
+            text1 (str): The first string.
+            text2 (str): The second string.
+            embed_function (Callable): The embedding function.
+        Returns:
+            similarity (float): The semantic similarity between the two strings.
+        """
+        text1_embedding = embed_function(text1)
+        text2_embedding = embed_function(text2)
+        similarity = 1 - (
+            np.dot(text1_embedding, text2_embedding)
+            / (np.linalg.norm(text1_embedding) * np.linalg.norm(text2_embedding))
+        )
+        return similarity
+
+    def validate(self, value: Any, metadata: Dict) -> ValidationResult:
+        prev_values = metadata.get("prev_values", [])
+        if not prev_values:
+            raise ValueError("You must provide a list of previous values in metadata.")
+
+        # Check if np is installed
+        if not _HAS_NUMPY:
+            raise ValueError(
+                "You must install numpy in order to "
+                "use the distribution check validator."
+            )
+        try:
+            value = int(value)
+            is_int = True
+        except ValueError:
+            is_int = False
+
+        if is_int:
+            # Check whether prev_values are also all integers
+            if not all(isinstance(prev_value, int) for prev_value in prev_values):
+                raise ValueError(
+                    "Both given value and all the previous values must be "
+                    "integers in order to use the distribution check validator."
+                )
+
+            # Check whether the value lies in a similar distribution as the prev_values
+            # Get mean and std of prev_values
+            prev_values = np.array(prev_values)
+            prev_mean = np.mean(prev_values)  # type: ignore
+            prev_std = np.std(prev_values)
+
+            # Check whether the value lies outside specified stds of the mean
+            if value < prev_mean - (
+                self._standard_deviations * prev_std
+            ) or value > prev_mean + (self._standard_deviations * prev_std):
+                return FailResult(
+                    error_message=(
+                        f"The value {value} lies outside of the expected distribution "
+                        f"of {prev_mean} +/- {self._standard_deviations * prev_std}."
+                    ),
+                )
+            return PassResult()
+        else:
+            # Check whether prev_values are also all strings
+            if not all(isinstance(prev_value, str) for prev_value in prev_values):
+                raise ValueError(
+                    "Both given value and all the previous values must be "
+                    "strings in order to use the distribution check validator."
+                )
+
+            # Check embed model
+            embed_function = metadata.get("embed_function", None)
+            if embed_function is None:
+                raise ValueError(
+                    "You must provide `embed_function` in metadata in order to "
+                    "check the semantic similarity of the generated string."
+                )
+
+            # Check whether the value is semantically similar to the prev_values
+            # Get average semantic similarity
+            # Lesser the average semantic similarity, more similar the strings are
+            avg_semantic_similarity = np.mean(
+                np.array(
+                    [
+                        self.get_semantic_similarity(value, prev_value, embed_function)
+                        for prev_value in prev_values
+                    ]
+                )
+            )
+
+            # If average semantic similarity is above the threshold,
+            # then the value is not semantically similar to the prev_values
+            if avg_semantic_similarity > self._threshold:
+                return FailResult(
+                    error_message=(
+                        f"The value {value} is not semantically similar to the "
+                        f"previous values. The average semantic similarity is "
+                        f"{avg_semantic_similarity} which is below the threshold of "
+                        f"{self._threshold}."
+                    ),
+                )
+            return PassResult()
+
+
+@register_validator(name="detect-secrets", data_type="string")
+class DetectSecrets(Validator):
+    """Validates whether the generated code snippet contains any secrets.
+
+    **Key Properties**
+    | Property                      | Description                       |
+    | ----------------------------- | --------------------------------- |
+    | Name for `format` attribute   | `detect-secrets`                  |
+    | Supported data types          | `string`                          |
+    | Programmatic fix              | None                              |
+
+    Parameters: Arguments
+        None
+
+    This validator uses the detect-secrets library to check whether the generated code
+    snippet contains any secrets. If any secrets are detected, the validator fails and
+    returns the generated code snippet with the secrets replaced with asterisks.
+    Else the validator returns the generated code snippet.
+
+    Following are some caveats:
+        - Multiple secrets on the same line may not be caught. e.g.
+            - Minified code
+            - One-line lists/dictionaries
+            - Multi-variable assignments
+        - Multi-line secrets may not be caught. e.g.
+            - RSA/SSH keys
+
+    Example:
+        ```py
+
+        guard = Guard.from_string(validators=[
+            DetectSecrets(on_fail="fix")
+        ])
+        guard.parse(
+            llm_output=code_snippet,
+        )
+    """
+
+    def __init__(self, on_fail: Union[Callable[..., Any], None] = None, **kwargs):
+        super().__init__(on_fail, **kwargs)
+
+        # Check if detect-secrets is installed
+        if detect_secrets is None:
+            raise ValueError(
+                "You must install detect-secrets in order to "
+                "use the DetectSecrets validator."
+            )
+        self.temp_file_name = "temp.txt"
+        self.mask = "********"
+
+    def get_unique_secrets(self, value: str) -> Tuple[Dict[str, Any], List[str]]:
+        """Get unique secrets from the value.
+
+        Args:
+            value (str): The generated code snippet.
+
+        Returns:
+            unique_secrets (Dict[str, Any]): A dictionary of unique secrets and their
+                line numbers.
+            lines (List[str]): The lines of the generated code snippet.
+        """
+        try:
+            # Write each line of value to a new file
+            with open(self.temp_file_name, "w") as f:
+                f.writelines(value)
+        except Exception as e:
+            raise OSError(
+                "Problems creating or deleting the temporary file. "
+                "Please check the permissions of the current directory."
+            ) from e
+
+        try:
+            # Create a new secrets collection
+            from detect_secrets import settings
+            from detect_secrets.core.secrets_collection import SecretsCollection
+
+            secrets = SecretsCollection()
+
+            # Scan the file for secrets
+            with settings.default_settings():
+                secrets.scan_file(self.temp_file_name)
+        except ImportError:
+            raise ValueError(
+                "You must install detect-secrets in order to "
+                "use the DetectSecrets validator."
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "Problems with creating a SecretsCollection or "
+                "scanning the file for secrets."
+            ) from e
+
+        # Get unique secrets from these secrets
+        unique_secrets = {}
+        for secret in secrets:
+            _, potential_secret = secret
+            actual_secret = potential_secret.secret_value
+            line_number = potential_secret.line_number
+            if actual_secret not in unique_secrets:
+                unique_secrets[actual_secret] = [line_number]
+            else:
+                # if secret already exists, avoid duplicate line numbers
+                if line_number not in unique_secrets[actual_secret]:
+                    unique_secrets[actual_secret].append(line_number)
+
+        try:
+            # File no longer needed, read the lines from the file
+            with open(self.temp_file_name, "r") as f:
+                lines = f.readlines()
+        except Exception as e:
+            raise OSError(
+                "Problems reading the temporary file. "
+                "Please check the permissions of the current directory."
+            ) from e
+
+        try:
+            # Delete the file
+            os.remove(self.temp_file_name)
+        except Exception as e:
+            raise OSError(
+                "Problems deleting the temporary file. "
+                "Please check the permissions of the current directory."
+            ) from e
+        return unique_secrets, lines
+
+    def get_modified_value(
+        self, unique_secrets: Dict[str, Any], lines: List[str]
+    ) -> str:
+        """Replace the secrets on the lines with asterisks.
+
+        Args:
+            unique_secrets (Dict[str, Any]): A dictionary of unique secrets and their
+                line numbers.
+            lines (List[str]): The lines of the generated code snippet.
+
+        Returns:
+            modified_value (str): The generated code snippet with secrets replaced with
+                asterisks.
+        """
+        # Replace the secrets on the lines with asterisks
+        for secret, line_numbers in unique_secrets.items():
+            for line_number in line_numbers:
+                lines[line_number - 1] = lines[line_number - 1].replace(
+                    secret, self.mask
+                )
+
+        # Convert lines to a multiline string
+        modified_value = "".join(lines)
+        return modified_value
+
+    def validate(self, value: str, metadata: Dict[str, Any]) -> ValidationResult:
+        # Check if value is a multiline string
+        if "\n" not in value:
+            # Raise warning if value is not a multiline string
+            warnings.warn(
+                "The DetectSecrets validator works best with "
+                "multiline code snippets. "
+                "Refer validator docs for more details."
+            )
+
+            # Add a newline to value
+            value += "\n"
+
+        # Get unique secrets from the value
+        unique_secrets, lines = self.get_unique_secrets(value)
+
+        if unique_secrets:
+            # Replace the secrets on the lines with asterisks
+            modified_value = self.get_modified_value(unique_secrets, lines)
+
+            return FailResult(
+                error_message=(
+                    "The following secrets were detected in your response:\n"
+                    + "\n".join(unique_secrets.keys())
+                ),
+                fix_value=modified_value,
+            )
+        return PassResult()

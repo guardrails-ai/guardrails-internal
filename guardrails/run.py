@@ -137,7 +137,7 @@ class Runner:
 
         # check if validator requirements are fulfilled
         missing_keys = verify_metadata_requirements(
-            self.metadata, self.output_schema.to_dict().values()
+            self.metadata, self.output_schema.root_datatype
         )
         if missing_keys:
             raise ValueError(
@@ -355,12 +355,12 @@ class Runner:
         """
 
         with start_action(action_type="call", index=index, prompt=prompt) as action:
-            if api is None:
-                if output is None:
-                    raise ValueError("API or output must be provided.")
+            if output is not None:
                 llm_response = LLMResponse(
                     output=output,
                 )
+            elif api is None:
+                raise ValueError("API or output must be provided.")
             elif msg_history:
                 try:
                     llm_response = api(
@@ -547,7 +547,7 @@ class AsyncRunner(Runner):
 
         # check if validator requirements are fulfilled
         missing_keys = verify_metadata_requirements(
-            self.metadata, self.output_schema.to_dict().values()
+            self.metadata, self.output_schema.root_datatype
         )
         if missing_keys:
             raise ValueError(

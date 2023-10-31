@@ -13,6 +13,7 @@ from guardrails.utils.pydantic_utils import (
     attach_validators_to_element,
     create_xml_element_for_base_model,
 )
+from guardrails.utils.xml_utils import cast_xml_to_string
 from guardrails.validators import Validator
 
 # TODO: Logging
@@ -125,8 +126,7 @@ class Rail:
 
         # Get version
         version = xml.attrib["version"]
-        if isinstance(version, bytes):
-            version = version.decode("utf-8")
+        version = cast_xml_to_string(version)
 
         return cls(
             input_schema=input_schema,
@@ -160,13 +160,13 @@ class Rail:
     def load_schema(root: ET._Element) -> Schema:
         """Given the RAIL <input> or <output> element, create a Schema
         object."""
-        return Schema(root)
+        return Schema.from_element(root)
 
     @staticmethod
     def load_input_schema(root: ET._Element) -> Schema:
         """Given the RAIL <input> element, create a Schema object."""
         # Recast the schema as an InputSchema.
-        return Schema(root)
+        return Schema.from_element(root)
 
     @staticmethod
     def load_output_schema(
@@ -186,12 +186,12 @@ class Rail:
         """
         # If root contains a `type="string"` attribute, then it's a StringSchema
         if "type" in root.attrib and root.attrib["type"] == "string":
-            return StringSchema(
+            return StringSchema.from_element(
                 root,
                 reask_prompt_template=reask_prompt,
                 reask_instructions_template=reask_instructions,
             )
-        return JsonSchema(
+        return JsonSchema.from_element(
             root,
             reask_prompt_template=reask_prompt,
             reask_instructions_template=reask_instructions,

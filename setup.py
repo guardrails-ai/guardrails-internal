@@ -20,10 +20,10 @@ with open(ver_path) as ver_file:
 # Package meta-data.
 NAME = "guardrails-ai"
 DESCRIPTION = "Adding guardrails to large language models."
-URL = "https://github.com/shreyar/guardrails"
+URL = "https://github.com/guardrails-ai/guardrails"
 EMAIL = "shreya.rajpal@gmail.com"
 AUTHOR = "Shreya Rajpal"
-REQUIRES_PYTHON = ">=3.7.0"
+REQUIRES_PYTHON = ">=3.8.0"
 VERSION = main_ns["__version__"]
 
 # What packages are required for this module to be executed?
@@ -40,6 +40,7 @@ REQUIRED = [
     "pytest",
     "regex",
     "typing-extensions",
+    "rstr",
 ]
 
 # Read in docs/requirements.txt
@@ -52,6 +53,10 @@ SUMMARY_REQUIREMENTS = ["thefuzz", "nltk"]
 
 VECTORDB_REQUIREMENTS = ["faiss-cpu", "numpy", "tiktoken"]
 
+PROFANITY_REQUIREMENTS = ["alt-profanity-check"]
+
+DETECT_SECRETS_REQUIREMENTS = ["detect-secrets"]
+
 DEV_REQUIREMENTS = [
     "black==22.12.0",
     "isort>=5.12.0",
@@ -59,18 +64,22 @@ DEV_REQUIREMENTS = [
     "docformatter>=1.4",
     "pytest-cov>=2.10.1",
     "pre-commit>=2.9.3",
+    "rstr",
     "twine",
     "pytest-mock",
     "pypdfium2",
     "pytest",
     "pytest-asyncio",
+    "pyright",
+    "lxml-stubs",
+    *SUMMARY_REQUIREMENTS,
+    *PROFANITY_REQUIREMENTS,
     *SQL_REQUIREMENTS,
     *VECTORDB_REQUIREMENTS,
+    *DETECT_SECRETS_REQUIREMENTS,
 ] + DOCS_REQUIREMENTS
 
 MANIFEST_REQUIREMENTS = ["manifest-ml"]
-
-PROFANITY_REQUIREMENTS = ["alt-profanity-check"]
 
 CRITIQUE_REQUIREMENTS = ["inspiredco"]
 
@@ -176,7 +185,7 @@ setup(
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     # $ setup.py publish support.

@@ -252,7 +252,7 @@ def test_uses_old_constant_schema(text, is_old_schema):
             warn_mock.assert_called_once_with(
                 """It appears that you are using an old schema for gaurdrails\
  variables, follow the new namespaced convention documented here:\
- https://docs.getguardrails.ai/0-2-migration/\
+ https://docs.guardrailsai.com/0-2-migration/\
 """
             )
 
@@ -274,3 +274,18 @@ def test_gr_dot_prefixed_prompt_item_fails():
         # From pydantic:
         prompt = """Give me a response to ${gr.ade}"""
         gd.Guard.from_pydantic(output_class=TestResponse, prompt=prompt)
+
+
+def test_escape():
+    prompt_string = (
+        'My prompt with a some sample json { "a" : 1 } and a {f_var} and a ${safe_var}'
+    )
+    prompt = Prompt(prompt_string)
+
+    escaped_prompt = prompt.escape()
+
+    assert prompt.source == prompt_string
+    assert (
+        escaped_prompt
+        == 'My prompt with a some sample json {{ "a" : 1 }} and a {{f_var}} and a ${safe_var}'  # noqa
+    )

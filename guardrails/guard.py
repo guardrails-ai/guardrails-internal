@@ -26,6 +26,7 @@ from guardrails.rail import Rail
 from guardrails.run import AsyncRunner, Runner
 from guardrails.schema import Schema
 from guardrails.utils.logs_utils import GuardState
+from guardrails.utils.parsing_utils import get_template_variables
 from guardrails.utils.reask_utils import sub_reasks_with_fixed_values
 from guardrails.validators import Validator
 
@@ -117,9 +118,7 @@ class Guard(Generic[T]):
             reask_prompt = Prompt(reask_prompt)
 
         # Check that the reask prompt has the correct variables
-        variables = [
-            t[1] for t in Formatter().parse(reask_prompt.source) if t[1] is not None
-        ]
+        variables = get_template_variables(reask_prompt.source)
         variable_set = set(variables)
         assert variable_set.__contains__("previous_response")
         assert variable_set.__contains__("output_schema")
@@ -516,7 +515,8 @@ class Guard(Generic[T]):
                                or just the incorrect values.
 
         Returns:
-            The validated response.
+            The validated response. This is either a string or a dictionary,
+                determined by the object schema defined in the RAILspec.
         """
         final_num_reasks = (
             num_reasks if num_reasks is not None else 0 if llm_api is None else None
@@ -583,10 +583,10 @@ class Guard(Generic[T]):
         api = get_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = Runner(
-                instructions=kwargs.get("instructions", None),
-                prompt=kwargs.get("prompt", None),
-                msg_history=kwargs.get("msg_history", None),
-                api=api,
+                instructions=kwargs.pop("instructions", None),
+                prompt=kwargs.pop("prompt", None),
+                msg_history=kwargs.pop("msg_history", None),
+                api=get_llm_ask(llm_api, *args, **kwargs) if llm_api else None,
                 input_schema=None,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
@@ -631,10 +631,10 @@ class Guard(Generic[T]):
         api = get_async_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = AsyncRunner(
-                instructions=None,
-                prompt=None,
-                msg_history=None,
-                api=api,
+                instructions=kwargs.pop("instructions", None),
+                prompt=kwargs.pop("prompt", None),
+                msg_history=kwargs.pop("msg_history", None),
+                api=get_async_llm_ask(llm_api, *args, **kwargs) if llm_api else None,
                 input_schema=None,
                 output_schema=self.output_schema,
                 num_reasks=num_reasks,
