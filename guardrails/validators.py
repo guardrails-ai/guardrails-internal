@@ -13,7 +13,7 @@ import re
 import string
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import openai
 import rstr

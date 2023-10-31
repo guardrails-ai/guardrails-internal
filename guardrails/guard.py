@@ -580,7 +580,6 @@ class Guard(Generic[T]):
         Returns:
             The validated response.
         """
-        api = get_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = Runner(
                 instructions=kwargs.pop("instructions", None),
@@ -628,7 +627,6 @@ class Guard(Generic[T]):
         Returns:
             The validated response.
         """
-        api = get_async_llm_ask(llm_api, *args, **kwargs) if llm_api else None
         with start_action(action_type="guard_parse"):
             runner = AsyncRunner(
                 instructions=kwargs.pop("instructions", None),
