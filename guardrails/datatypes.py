@@ -151,6 +151,7 @@ class DataType:
             return False
         return self.__dict__ == other.__dict__
 
+
 registry: Dict[str, Type[DataType]] = {}
 
 
