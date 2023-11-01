@@ -35,6 +35,7 @@ class ValidatorLogs(ArbitraryModel):
     value_after_validation: Optional[Any] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    instance_id: Optional[int] = None
 
 
 class FieldValidationLogs(ArbitraryModel):

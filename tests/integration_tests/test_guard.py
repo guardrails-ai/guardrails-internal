@@ -8,13 +8,13 @@ from pydantic import BaseModel
 import guardrails as gd
 from guardrails.classes.validation_result import FailResult
 from guardrails.guard import Guard
-from guardrails.stores.context import ContextStore
 from guardrails.utils.reask_utils import FieldReAsk
 from tests.integration_tests.test_assets.fixtures import (  # noqa
     fixture_llm_output,
     fixture_rail_spec,
     fixture_validated_output,
 )
+from tests.mocks.mock_trace import MockContext, MockSpan, MockTrace, MockTracer
 
 from .mock_llm_outputs import (
     MockOpenAICallable,
@@ -22,7 +22,6 @@ from .mock_llm_outputs import (
     entity_extraction,
 )
 from .test_assets import pydantic, string
-from tests.mocks.mock_trace import MockSpan, MockTrace, MockTracer
 
 
 def guard_initializer(
@@ -655,6 +654,10 @@ def test_pydantic_with_message_history_reask(mocker):
 
 def test_guard_with_tracer(mocker):
     """Test guard with a tracer specified."""
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
+    
     mock_tracer = MockTracer()
     mocker.patch("guardrails.llm_providers.OpenAICallable", new=MockOpenAICallable)
     mocker.patch("opentelemetry.trace", new=MockTrace)
@@ -662,7 +665,6 @@ def test_guard_with_tracer(mocker):
     get_current_span_spy = mocker.spy(MockTrace, "get_current_span")
     add_event_spy = mocker.spy(MockSpan, "add_event")
     set_status_spy = mocker.spy(MockSpan, "set_status")
-
 
     guard = Guard.from_rail_string(string.RAIL_SPEC_FOR_TRACE, tracer=mock_tracer)
     _, final_output = guard(
@@ -683,13 +685,11 @@ def test_guard_with_tracer(mocker):
 
     # Assert tracer was used
     assert start_as_current_span_spy.call_count == 3
-    start_as_current_span_spy.assert_any_call("step")
-    start_as_current_span_spy.assert_any_call("call")
-    start_as_current_span_spy.assert_any_call("length.validate")
+    start_as_current_span_spy.assert_any_call("step", mock_context)
+    start_as_current_span_spy.assert_any_call("call", mock_context)
+    start_as_current_span_spy.assert_any_call("length.validate", mock_context)
     assert get_current_span_spy.call_count == 1
     assert add_event_spy.call_count == 1
 
     # TODO: Add a validator that throws to test this
     assert set_status_spy.call_count == 0
-
-    ContextStore().reset()

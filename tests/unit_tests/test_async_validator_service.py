@@ -1,8 +1,8 @@
 import asyncio
+from datetime import datetime
 
 import pytest
 
-from datetime import datetime
 from guardrails.classes.validation_result import PassResult
 from guardrails.datatypes import FieldValidation
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs

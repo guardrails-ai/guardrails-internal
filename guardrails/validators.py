@@ -4,7 +4,6 @@ The name with which a validator is registered is the name that is used
 in the `RAIL` spec to specify formatters.
 """
 import ast
-import contextvars
 import inspect
 import itertools
 import logging
@@ -25,7 +24,7 @@ from guardrails.classes.validation_result import (
     Refrain,
     ValidationResult,
 )
-from guardrails.stores.context import ContextStore
+from guardrails.stores.context import get_call_kwarg, get_document_store
 from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.docs_utils import get_chunks_from_text, sentence_split
 from guardrails.utils.sql_utils import SQLDriver, create_sql_driver
@@ -266,10 +265,6 @@ class Validator:
                 self.rail_alias in validators_registry
             ), f"Validator {self.__class__.__name__} is not registered. "
 
-        child_cls = type(self)
-        child_cls.validate = trace_validator(
-            validator_name=child_cls.rail_alias, namespace=child_cls.namespace
-        )(child_cls.validate)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
         """Validates a value and return a validation result."""
@@ -575,7 +570,6 @@ class ValidLength(Validator):
             else:
                 last_val = [value[-1]]
                 corrected_value = value + last_val * (self._min - len(value))
-
             return FailResult(
                 error_message=f"Value has length less than {self._min}. "
                 f"Please return a longer output, "
@@ -591,7 +585,6 @@ class ValidLength(Validator):
                 f"that is shorter than {self._max} characters.",
                 fix_value=value[: self._max],
             )
-
         return PassResult()
 
 
@@ -928,7 +921,7 @@ class SimilarToDocument(Validator):
         self._document_embedding = np.array(embedding)
         self._model = model
         self._threshold = float(threshold)
-        self.document_store = document_store or ContextStore().get_document_store()
+        self.document_store = document_store or get_document_store()
 
     @staticmethod
     def cosine_similarity(a: "np.ndarray", b: "np.ndarray") -> float:
@@ -1138,7 +1131,7 @@ class ExtractedSummarySentencesMatch(Validator):
         # TODO(shreya): Pass embedding_model, vector_db, document_store from spec
 
         self._threshold = float(threshold)
-        self.store = document_store or ContextStore().get_document_store()
+        self.store = document_store or get_document_store()
 
     @staticmethod
     def _instantiate_store(
@@ -1175,15 +1168,8 @@ class ExtractedSummarySentencesMatch(Validator):
             )
         filepaths = metadata["filepaths"]
 
-        kwargs = {}
-        context_copy = contextvars.copy_context()
-        for key, context_var in context_copy.items():
-            if key.name == "kwargs" and isinstance(kwargs, dict):
-                kwargs = context_var
-                break
-
-        api_key = kwargs.get("api_key")
-        api_base = kwargs.get("api_base")
+        api_key = get_call_kwarg("api_key")
+        api_base = get_call_kwarg("api_base")
 
         store = self._instantiate_store(metadata, api_key, api_base)
 
@@ -2237,15 +2223,8 @@ class ProvenanceV1(Validator):
         return PassResult(metadata=metadata)
 
     def validate(self, value: Any, metadata: Dict[str, Any]) -> ValidationResult:
-        kwargs = {}
-        context_copy = contextvars.copy_context()
-        for key, context_var in context_copy.items():
-            if key.name == "kwargs" and isinstance(kwargs, dict):
-                kwargs = context_var
-                break
-
-        api_key = kwargs.get("api_key")
-        api_base = kwargs.get("api_base")
+        api_key = get_call_kwarg("api_key")
+        api_base = get_call_kwarg("api_base")
 
         # Set the OpenAI API key
         if os.getenv("OPENAI_API_KEY"):  # Check if set in environment
