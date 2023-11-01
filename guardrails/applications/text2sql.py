@@ -5,9 +5,9 @@ from typing import Callable, Dict, Optional
 
 import openai
 
-from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.embedding import EmbeddingBase, OpenAIEmbedding
 from guardrails.guard import Guard
+from guardrails.stores.document import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.utils.sql_utils import create_sql_driver
 from guardrails.vectordb import Faiss, VectorDBBase
 

@@ -38,6 +38,7 @@ def mock_openai_embedding(monkeypatch):
     return MockOpenAIEmbedding
 
 
+# FIXME: We should be mocking any third party calls here
 @pytest.mark.skipif(
     os.environ.get("OPENAI_API_KEY") is None, reason="openai api key not set"
 )

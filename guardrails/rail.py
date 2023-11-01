@@ -8,9 +8,9 @@ from lxml import etree as ET
 from lxml.etree import Element, SubElement
 from pydantic import BaseModel
 
-from guardrails.document_store import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.prompt import Instructions, Prompt
 from guardrails.schema import JsonSchema, Schema, StringSchema
+from guardrails.stores.document import DocumentStoreBase, EphemeralDocumentStore
 from guardrails.utils.pydantic_utils import (
     attach_validators_to_element,
     create_xml_element_for_base_model,

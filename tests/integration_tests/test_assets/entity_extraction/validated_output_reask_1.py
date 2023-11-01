@@ -1,6 +1,6 @@
 # flake8: noqa: E501
+from guardrails.classes.validation_result import FailResult
 from guardrails.utils.reask_utils import FieldReAsk
-from guardrails.validators import FailResult
 
 VALIDATED_OUTPUT_REASK_1 = {
     "fees": [

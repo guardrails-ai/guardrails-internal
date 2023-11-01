@@ -4,7 +4,7 @@ from guard_rails_api_client import AuthenticatedClient
 from guard_rails_api_client.api.default import ingest
 from guard_rails_api_client.models import IngestionPayload
 
-from guardrails.document_store import Document
+from guardrails.stores.document import Document
 
 client = AuthenticatedClient(
     base_url="http://localhost:5000", follow_redirects=True, token="test-token"

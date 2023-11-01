@@ -6,7 +6,7 @@ from guard_rails_api_client import AuthenticatedClient
 from guard_rails_api_client.api.default import ingest
 from guard_rails_api_client.models import IngestionPayload
 
-from guardrails.document_store import Document, DocumentStoreBase
+from guardrails.stores.document import Document, DocumentStoreBase
 
 try:
     import sqlalchemy

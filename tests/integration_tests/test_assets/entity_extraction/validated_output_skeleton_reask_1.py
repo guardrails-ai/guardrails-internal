@@ -1,6 +1,6 @@
 # flake8: noqa: E501
+from guardrails.classes.validation_result import FailResult
 from guardrails.utils.reask_utils import SkeletonReAsk
-from guardrails.validators import FailResult
 
 VALIDATED_OUTPUT_SKELETON_REASK_1 = SkeletonReAsk(
     incorrect_value={

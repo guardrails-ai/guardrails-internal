@@ -3,25 +3,46 @@ import itertools
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from guardrails.datatypes import FieldValidation
-from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
-from guardrails.utils.reask_utils import FieldReAsk, ReAsk
-from guardrails.validators import (
+from guardrails.classes.validation_result import (
     FailResult,
     Filter,
     PassResult,
     Refrain,
-    Validator,
+    ValidationResult,
     ValidatorError,
 )
+from guardrails.datatypes import FieldValidation
+from guardrails.utils.telemetry_utils import trace_validator
+from guardrails.utils.casting_utils import to_string
+from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
+from guardrails.utils.reask_utils import FieldReAsk, ReAsk
+from guardrails.validators import Validator
 
 logger = logging.getLogger(__name__)
 
 
 class ValidatorServiceBase:
     """Base class for validator services."""
+
+    # NOTE: This is avoiding an issue with multiprocessing.
+    #       If we wrap the validate methods at the class level or anytime before 
+    #       loop.run_in_executor is called, multiprocessing fails with a Pickling error.
+    #       This is a well known issue without any real solutions.
+    #       Using `fork` instead of `spawn` may alleviate the symptom for POSIX systems,
+    #       but is relatively unsupported on Windows.
+    def execute_validator(self, validator: Validator, value: Any, metadata: Optional[Dict]) -> ValidationResult:
+        traced_validator = trace_validator(
+            validator_name=validator.rail_alias,
+            obj_id=id(validator),
+            namespace=validator.namespace,
+            on_fail_descriptor=validator.on_fail_descriptor,
+            **validator._kwargs,
+        )(validator.validate)
+        result = traced_validator(value, metadata)
+        return result
 
     def perform_correction(
         self,
@@ -34,7 +55,7 @@ class ValidatorServiceBase:
             return results[0].fix_value
         elif on_fail_descriptor == "fix_reask":
             fixed_value = results[0].fix_value
-            result = validator.validate(fixed_value, results[0].metadata or {})
+            result = self.execute_validator(validator, fixed_value, results[0].metadata or {})
 
             if isinstance(result, FailResult):
                 return FieldReAsk(
@@ -76,14 +97,23 @@ class ValidatorServiceBase:
         validator_logs = ValidatorLogs(
             validator_name=validator_class_name,
             value_before_validation=value,
+            registered_name=validator.rail_alias,
         )
+        # VALIDATOR_LOG DUPLICATION
         validation_logs.validator_logs.append(validator_logs)
 
-        result = validator.validate(value, metadata)
+        start_time = datetime.now()
+        result = self.execute_validator(validator, value, metadata)
+        end_time = datetime.now()
         if result is None:
             result = PassResult()
 
         validator_logs.validation_result = result
+        validator_logs.start_time = start_time
+        validator_logs.end_time = end_time
+        # If we ever re-use validator instances across multiple properties,
+        #   this will have to change.
+        validator_logs.instance_id = to_string(id(validator))
         return validator_logs
 
 
@@ -100,6 +130,7 @@ class SequentialValidatorService(ValidatorServiceBase):
             validator_logs = self.run_validator(
                 validation_logs, validator, value, metadata
             )
+            # VALIDATOR_LOG DUPLICATION
             validation_logs.validator_logs.append(validator_logs)
 
             result = validator_logs.validation_result
@@ -204,12 +235,14 @@ class AsyncValidatorService(ValidatorServiceBase, MultiprocMixin):
                     result = self.run_validator(
                         validation_logs, validator, value, metadata
                     )
+                    # VALIDATOR_LOG DUPLICATION
                     validators_logs.append(result)
 
             # wait for the parallel tasks to finish
             if parallel_tasks:
                 parallel_results = await asyncio.gather(*parallel_tasks)
                 validation_logs.validator_logs.extend(parallel_results)
+                # VALIDATOR_LOG DUPLICATION
                 validators_logs.extend(parallel_results)
 
             # process the results, handle failures

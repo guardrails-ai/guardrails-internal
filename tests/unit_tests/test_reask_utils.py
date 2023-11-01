@@ -1,12 +1,12 @@
 import pytest
 from lxml.etree import Element, SubElement, tostring
 
+from guardrails.classes.validation_result import FailResult
 from guardrails.utils.reask_utils import (
     FieldReAsk,
     get_pruned_tree,
     prune_obj_for_reasking,
 )
-from guardrails.validators import FailResult
 
 # FIXME: These tests are not exhaustive.
 # They only add missing coverage from the 0.2 release

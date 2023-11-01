@@ -6,9 +6,15 @@ import pytest
 from pydantic import BaseModel
 
 import guardrails as gd
+from guardrails.classes.validation_result import FailResult
 from guardrails.guard import Guard
 from guardrails.utils.reask_utils import FieldReAsk
-from guardrails.validators import FailResult
+from tests.integration_tests.test_assets.fixtures import (  # noqa
+    fixture_llm_output,
+    fixture_rail_spec,
+    fixture_validated_output,
+)
+from tests.mocks.mock_trace import MockContext, MockSpan, MockTrace, MockTracer
 
 from .mock_llm_outputs import (
     MockOpenAICallable,
@@ -16,74 +22,6 @@ from .mock_llm_outputs import (
     entity_extraction,
 )
 from .test_assets import pydantic, string
-
-
-@pytest.fixture(scope="module")
-def rail_spec():
-    return """
-<rail version="0.1">
-
-<output>
-    <string name="dummy_string" description="Any dummy string" />
-    <integer name="dummy_integer" description="Any dummy integer" />
-    <float name="dummy_float" description="Any dummy float" />
-    <bool name="dummy_boolean" description="Any dummy boolean" />
-    <email name="dummy_email" description="Any dummy email" />
-    <url name="dummy_url" description="Any dummy url" />
-    <date name="dummy_date" description="Any dummy date" />
-    <time name="dummy_time" description="Any dummy time" />
-    <list name="dummy_list" description="Any dummy list" />
-    <object name="dummy_object" description="Any dummy object" />
-</output>
-
-
-<prompt>
-
-Generate a JSON of dummy data, where the data types are specified by the user.
-
-${gr.complete_json_suffix}
-
-</prompt>
-
-</rail>
-"""
-
-
-@pytest.fixture(scope="module")
-def llm_output():
-    return """
-{
-    "dummy_string": "Some string",
-    "dummy_integer": 42,
-    "dummy_float": 3.14,
-    "dummy_boolean": true,
-    "dummy_email": "example@example.com",
-    "dummy_url": "https://www.example.com",
-    "dummy_date": "2020-01-01",
-    "dummy_time": "12:00:00",
-    "dummy_list": ["item1", "item2", "item3"],
-    "dummy_object": {
-        "key1": "value1",
-        "key2": "value2"
-    }
-}
-"""
-
-
-@pytest.fixture(scope="module")
-def validated_output():
-    return {
-        "dummy_string": "Some string",
-        "dummy_integer": 42,
-        "dummy_float": 3.14,
-        "dummy_boolean": True,
-        "dummy_email": "example@example.com",
-        "dummy_url": "https://www.example.com",
-        "dummy_date": "2020-01-01",
-        "dummy_time": "12:00:00",
-        "dummy_list": ["item1", "item2", "item3"],
-        "dummy_object": {"key1": "value1", "key2": "value2"},
-    }
 
 
 def guard_initializer(
@@ -98,10 +36,12 @@ def guard_initializer(
         return Guard.from_pydantic(rail, prompt=prompt, instructions=instructions)
 
 
-'''def test_rail_spec_output_parse(rail_spec, llm_output, validated_output):
+@pytest.mark.usefixtures("rail_spec", "llm_output", "validated_output")
+@pytest.mark.skip
+def test_rail_spec_output_parse(rail_spec, llm_output, validated_output):
     """Test that the rail_spec fixture is working."""
     guard = gd.Guard.from_rail_string(rail_spec)
-    assert guard.parse(llm_output) == validated_output'''
+    assert guard.parse(llm_output) == validated_output
 
 
 @pytest.mark.parametrize(
@@ -485,11 +425,10 @@ def test_skeleton_reask(mocker):
     )
 
 
-'''def test_json_output(mocker):
+@pytest.mark.skip
+def test_json_output(mocker):
     """Test single string (non-JSON) generation."""
-    mocker.patch(
-        "guardrails.llm_providers.openai_wrapper", new=openai_completion_create
-    )
+    mocker.patch("guardrails.llm_providers.openai_wrapper", new=MockOpenAICallable)
 
     guard = gd.Guard.from_rail_string(string.RAIL_SPEC_FOR_LIST)
     _, final_output = guard(
@@ -504,10 +443,8 @@ def test_skeleton_reask(mocker):
     assert len(guard_history) == 1
 
     # For original prompt and output
-    #assert guard_history[0].prompt == gd.Prompt(string.COMPILED_PROMPT)
+    # assert guard_history[0].prompt == gd.Prompt(string.COMPILED_PROMPT)
     assert guard_history[0].output == string.LLM_OUTPUT
-
-'''
 
 
 @pytest.mark.parametrize(
@@ -713,3 +650,46 @@ def test_pydantic_with_message_history_reask(mocker):
     assert guard_history[1].validated_output == json.loads(
         pydantic.MSG_HISTORY_LLM_OUTPUT_CORRECT
     )
+
+
+def test_guard_with_tracer(mocker):
+    """Test guard with a tracer specified."""
+    mock_context = MockContext()
+    mock_get_context = mocker.patch("guardrails.utils.telemetry_utils.get_current_context")
+    mock_get_context.return_value = mock_context
+    
+    mock_tracer = MockTracer()
+    mocker.patch("guardrails.llm_providers.OpenAICallable", new=MockOpenAICallable)
+    mocker.patch("opentelemetry.trace", new=MockTrace)
+    start_as_current_span_spy = mocker.spy(mock_tracer, "start_as_current_span")
+    get_current_span_spy = mocker.spy(MockTrace, "get_current_span")
+    add_event_spy = mocker.spy(MockSpan, "add_event")
+    set_status_spy = mocker.spy(MockSpan, "set_status")
+
+    guard = Guard.from_rail_string(string.RAIL_SPEC_FOR_TRACE, tracer=mock_tracer)
+    _, final_output = guard(
+        llm_api=openai.Completion.create,
+        prompt_params={"ingredients": "tomato, cheese, sour cream"},
+        num_reasks=1,
+    )
+    assert final_output == string.LLM_OUTPUT
+
+    guard_history = guard.guard_state.most_recent_call.history
+
+    # Check that the guard state object has the correct number of re-asks.
+    assert len(guard_history) == 1
+
+    # For original prompt and output
+    assert guard_history[0].prompt == gd.Prompt(string.COMPILED_PROMPT)
+    assert guard_history[0].output == string.LLM_OUTPUT
+
+    # Assert tracer was used
+    assert start_as_current_span_spy.call_count == 3
+    start_as_current_span_spy.assert_any_call("step", mock_context)
+    start_as_current_span_spy.assert_any_call("call", mock_context)
+    start_as_current_span_spy.assert_any_call("length.validate", mock_context)
+    assert get_current_span_spy.call_count == 1
+    assert add_event_spy.call_count == 1
+
+    # TODO: Add a validator that throws to test this
+    assert set_status_spy.call_count == 0

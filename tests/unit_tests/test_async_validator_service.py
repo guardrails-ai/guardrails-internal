@@ -1,11 +1,12 @@
 import asyncio
+from datetime import datetime
 
 import pytest
 
+from guardrails.classes.validation_result import PassResult
 from guardrails.datatypes import FieldValidation
 from guardrails.utils.logs_utils import FieldValidationLogs, ValidatorLogs
 from guardrails.validator_service import AsyncValidatorService
-from guardrails.validators import PassResult
 
 from .mocks import MockLoop
 from .mocks.mock_validator import create_mock_validator
@@ -184,8 +185,11 @@ async def test_run_validators(mocker):
     def mock_run_validator(validation_logs, validator, value, metadata):
         return ValidatorLogs(
             validator_name=validator.name,
+            registered_name=validator.name,
             value_before_validation=value,
             validation_result=PassResult(),
+            start_time=datetime.now(),
+            end_time=datetime.now(),
         )
 
     run_validator_mock = mocker.patch.object(
@@ -245,8 +249,11 @@ async def test_run_validators_with_override(mocker):
     run_validator_mock = mocker.patch.object(avs, "run_validator")
     run_validator_mock.return_value = ValidatorLogs(
         validator_name="override",
+        registered_name="override",
         value_before_validation="mock-value",
         validation_result=PassResult(value_override="override"),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
     )
 
     mock_loop = MockLoop(True)

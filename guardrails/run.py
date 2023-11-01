@@ -17,6 +17,7 @@ from guardrails.utils.reask_utils import (
     reasks_to_dict,
     sub_reasks_with_fixed_values,
 )
+from guardrails.utils.telemetry_utils import async_trace, trace
 
 logger = logging.getLogger(__name__)
 actions_logger = logging.getLogger(f"{__name__}.actions")
@@ -181,6 +182,7 @@ class Runner:
 
             return self.guard_history
 
+    @trace(name="step")
     def step(
         self,
         index: int,
@@ -323,6 +325,7 @@ class Runner:
 
         return instructions, prompt, msg_history
 
+    @trace(name="call")
     def call(
         self,
         index: int,
@@ -406,7 +409,7 @@ class Runner:
         """Validate the output."""
         with start_action(action_type="validate", index=index) as action:
             validated_output = output_schema.validate(
-                guard_logs, parsed_output, self.metadata
+                guard_logs, parsed_output, self.metadata, attempt_number=index
             )
 
             action.log(
@@ -568,6 +571,7 @@ class AsyncRunner(Runner):
 
             return self.guard_history
 
+    @async_trace(name="step")
     async def async_step(
         self,
         index: int,
@@ -652,6 +656,7 @@ class AsyncRunner(Runner):
 
             return validated_output or parsed_output, reasks
 
+    @async_trace(name="call")
     async def async_call(
         self,
         index: int,
@@ -721,7 +726,7 @@ class AsyncRunner(Runner):
         """Validate the output."""
         with start_action(action_type="validate", index=index) as action:
             validated_output = await output_schema.async_validate(
-                guard_logs, parsed_output, self.metadata
+                guard_logs, parsed_output, self.metadata, attempt_number=index
             )
 
             action.log(

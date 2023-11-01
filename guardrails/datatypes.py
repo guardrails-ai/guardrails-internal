@@ -9,7 +9,7 @@ from typing import Optional, Tuple, Type, TypeVar, Union
 from lxml import etree as ET
 from typing_extensions import Self
 
-from guardrails.document_store import DocumentStoreBase
+from guardrails.stores.document import DocumentStoreBase
 from guardrails.utils.casting_utils import to_float, to_int, to_string
 from guardrails.validators import Validator
 

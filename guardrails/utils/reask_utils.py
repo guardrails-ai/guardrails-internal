@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 import pydantic
 from lxml import etree as ET
 
-from guardrails.validators import FailResult
+from guardrails.classes.validation_result import FailResult
 
 
 class ReAsk(pydantic.BaseModel):
@@ -24,7 +24,7 @@ class NonParseableReAsk(ReAsk):
     pass
 
 
-def gather_reasks(validated_output: Optional[Union[Dict, ReAsk]]) -> List[ReAsk]:
+def gather_reasks(validated_output: Optional[Union[str, Dict, ReAsk]]) -> List[ReAsk]:
     """Traverse output and gather all ReAsk objects.
 
     Args:
@@ -73,7 +73,8 @@ def gather_reasks(validated_output: Optional[Union[Dict, ReAsk]]) -> List[ReAsk]
                 _gather_reasks_in_list(item, path + [idx])
         return
 
-    _gather_reasks_in_dict(validated_output)
+    if isinstance(validated_output, Dict):
+        _gather_reasks_in_dict(validated_output)
     return reasks
 
 
