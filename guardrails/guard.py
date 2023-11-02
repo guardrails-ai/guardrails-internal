@@ -238,22 +238,6 @@ class Guard(Generic[OT]):
     @overload
     def __call__(
         self,
-        llm_api: Callable[[Any], Awaitable[Any]],
-        prompt_params: Optional[Dict] = None,
-        num_reasks: Optional[int] = None,
-        prompt: Optional[str] = None,
-        instructions: Optional[str] = None,
-        msg_history: Optional[List[Dict]] = None,
-        metadata: Optional[Dict] = None,
-        full_schema_reask: Optional[bool] = None,
-        *args,
-        **kwargs,
-    ) -> Awaitable[ValidationOutcome[OT]]:
-        ...
-
-    @overload
-    def __call__(
-        self,
         llm_api: Callable,
         prompt_params: Optional[Dict] = None,
         num_reasks: Optional[int] = None,
@@ -265,6 +249,22 @@ class Guard(Generic[OT]):
         *args,
         **kwargs,
     ) -> ValidationOutcome[OT]:
+        ...
+
+    @overload
+    def __call__(
+        self,
+        llm_api: Callable[[Any], Awaitable[Any]],
+        prompt_params: Optional[Dict] = None,
+        num_reasks: Optional[int] = None,
+        prompt: Optional[str] = None,
+        instructions: Optional[str] = None,
+        msg_history: Optional[List[Dict]] = None,
+        metadata: Optional[Dict] = None,
+        full_schema_reask: Optional[bool] = None,
+        *args,
+        **kwargs,
+    ) -> Awaitable[ValidationOutcome[OT]]:
         ...
 
     def __call__(
