@@ -602,8 +602,10 @@ class Guard(Generic[OT]):
                 full_schema_reask=full_schema_reask,
             )
             guard_history, error_message = runner(prompt_params=prompt_params)
-            if (len(guard_history.history) > 0):
-                guard_history.history.at(-1).validated_output = sub_reasks_with_fixed_values(
+            if len(guard_history.history) > 0:
+                guard_history.history.at(
+                    -1
+                ).validated_output = sub_reasks_with_fixed_values(
                     guard_history.validated_output
                 )
             validation_outcome = ValidationOutcome[OT].from_guard_history(
@@ -652,8 +654,10 @@ class Guard(Generic[OT]):
             guard_history, error_message = await runner.async_run(
                 prompt_params=prompt_params
             )
-            if (len(guard_history.history) > 0):
-                guard_history.history.at(-1).validated_output = sub_reasks_with_fixed_values(
+            if len(guard_history.history) > 0:
+                guard_history.history.at(
+                    -1
+                ).validated_output = sub_reasks_with_fixed_values(
                     guard_history.validated_output
                 )
             return ValidationOutcome[OT].from_guard_history(
