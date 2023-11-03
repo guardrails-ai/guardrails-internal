@@ -10,7 +10,8 @@ from guardrails.datatypes import verify_metadata_requirements
 from guardrails.llm_providers import AsyncPromptCallableBase, PromptCallableBase
 from guardrails.prompt import Instructions, Prompt
 from guardrails.schema import Schema
-from guardrails.utils.logs_utils import GuardHistory, GuardLogs, GuardState, LLMResponse
+from guardrails.utils.llm_response import LLMResponse
+from guardrails.utils.logs_utils import GuardHistory, GuardLogs, GuardState
 from guardrails.utils.reask_utils import (
     FieldReAsk,
     NonParseableReAsk,
@@ -55,8 +56,6 @@ class Runner:
         input_schema: Optional[Schema] = None,
         metadata: Optional[Dict[str, Any]] = None,
         output: Optional[str] = None,
-        reask_prompt: Optional[Prompt] = None,
-        reask_instructions: Optional[Instructions] = None,
         guard_history: Optional[GuardHistory] = None,
         base_model: Optional[Type[BaseModel]] = None,
         full_schema_reask: bool = False,
@@ -96,8 +95,6 @@ class Runner:
         self.num_reasks = num_reasks
         self.metadata = metadata or {}
         self.output = output
-        self.reask_prompt = reask_prompt
-        self.reask_instructions = reask_instructions
         self.guard_history = guard_history or GuardHistory(history=ListPlusPlus())
         self.base_model = base_model
         self.full_schema_reask = full_schema_reask
@@ -486,8 +483,6 @@ class AsyncRunner(Runner):
         input_schema: Optional[Schema] = None,
         metadata: Optional[Dict[str, Any]] = None,
         output: Optional[str] = None,
-        reask_prompt: Optional[Prompt] = None,
-        reask_instructions: Optional[Instructions] = None,
         guard_history: Optional[GuardHistory] = None,
         base_model: Optional[Type[BaseModel]] = None,
         full_schema_reask: bool = False,
@@ -503,8 +498,6 @@ class AsyncRunner(Runner):
             input_schema=input_schema,
             metadata=metadata,
             output=output,
-            reask_prompt=reask_prompt,
-            reask_instructions=reask_instructions,
             guard_history=guard_history,
             base_model=base_model,
             full_schema_reask=full_schema_reask,

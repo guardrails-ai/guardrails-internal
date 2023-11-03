@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import Field, PrivateAttr
 from rich.console import Group
 from rich.panel import Panel
 from rich.pretty import pretty_repr
@@ -10,6 +10,8 @@ from rich.tree import Tree
 
 from guardrails.classes.list_plus_plus import ListPlusPlus
 from guardrails.prompt import Instructions, Prompt
+from guardrails.utils.llm_response import LLMResponse
+from guardrails.utils.pydantic_utils import ArbitraryModel
 from guardrails.utils.reask_utils import (
     FieldReAsk,
     ReAsk,
@@ -18,11 +20,6 @@ from guardrails.utils.reask_utils import (
     prune_obj_for_reasking,
 )
 from guardrails.validators import ValidationResult
-
-
-class ArbitraryModel(BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class ValidatorLogs(ArbitraryModel):
@@ -39,12 +36,6 @@ class FieldValidationLogs(ArbitraryModel):
 
     validator_logs: List[ValidatorLogs] = Field(default_factory=list)
     children: Dict[Union[int, str], "FieldValidationLogs"] = Field(default_factory=dict)
-
-
-class LLMResponse(ArbitraryModel):
-    prompt_token_count: Optional[int] = None
-    response_token_count: Optional[int] = None
-    output: str
 
 
 class GuardLogs(ArbitraryModel):
