@@ -34,14 +34,16 @@ class Rail:
         3. `<prompt>`, which contains the prompt to be passed to the LLM
         4. `<instructions>`, which contains the instructions to be passed to the LLM
     """
+    # Temporarily Disable Ingestion Service
+    # api_key = os.environ.get("GUARDRAILS_API_KEY")
+    # if api_key is not None:
+    #     from guardrails.ingestion_service import IngestionServiceDocumentStore
 
-    api_key = os.environ.get("GUARDRAILS_API_KEY")
-    if api_key is not None:
-        from guardrails.ingestion_service import IngestionServiceDocumentStore
+    #     document_store = IngestionServiceDocumentStore(api_key=api_key)
+    # else:
+    #     document_store = EphemeralDocumentStore()
 
-        document_store = IngestionServiceDocumentStore(api_key=api_key)
-    else:
-        document_store = EphemeralDocumentStore()
+    document_store = EphemeralDocumentStore()
 
     input_schema: Optional[Schema]
     output_schema: Schema
