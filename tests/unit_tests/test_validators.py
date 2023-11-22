@@ -401,6 +401,10 @@ def test_provenance_v1(mocker):
 
     # Test guard.parse() with 3 different ways of setting the OpenAI API key API key
 
+    # 1. Setting the API key directly
+    if OPENAI_VERSION.startswith("0"):  # not supported in v1 anymore
+        openai.api_key = API_KEY
+
     output = string_guard.parse(
         llm_output=LLM_RESPONSE,
         metadata={"query_function": mock_chromadb_query_function},
